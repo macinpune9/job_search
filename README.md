@@ -1,134 +1,126 @@
 # JobPilot
 
-Job discovery, honest ATS resume tailoring, and application tracking. FastAPI + SQLAlchemy backend, Next.js frontend,
-a lock-protected scheduler that runs every 24 hours with no browser open.
+A job-search assistant that **finds relevant jobs, tailors your resume to each one without inventing anything, and keeps an
+auditable record of every application**. A scheduler repeats the search every 24 hours, even when no browser is open.
 
-**Principles:** the uploaded resume is the only source of facts (generated resumes can only *select and reorder* them and
-are independently validated); nothing is marked "submitted" without confirmation; a job can never be applied to twice;
-no scraping of sites that forbid it; automation defaults to review-before-submit.
+## Purpose
 
-> **Status: working foundation, not a finished product.** Read [Known limitations](#known-limitations) before relying on it.
-> The only submission mechanism is a clearly-labelled **sandbox test double**; real employer submission is not implemented.
+Job hunting is repetitive: searching many boards, re-checking the same listings, rewriting a resume per role, and losing
+track of where you applied. JobPilot automates the repetitive parts and deliberately keeps *you* in control of the
+consequential ones.
 
-## Quick start (no Docker needed)
+| It does | It will not |
+|---|---|
+| Search public job boards (Greenhouse, Lever, Ashby) and de-duplicate results across runs | Scrape sites that forbid it, or bypass logins/CAPTCHAs |
+| Score each job against your keywords and preferences, and show *why* it matched or was excluded | Hide a job without giving a reason |
+| Produce a job-specific ATS-friendly resume (DOCX/PDF) from **your own** resume facts | Add a skill, title, degree, employer, date or metric you don't already have |
+| Prepare an application (or a manual-apply package) and wait for your approval | Submit anything by default, or mark "submitted" without confirmation |
+| Keep an immutable history of every status change and resume version used | Ever apply to the same job twice |
+
+## Solution design approach
+
+Five principles drive the design; each maps to a concrete mechanism in the code.
+
+1. **Your resume is the only source of facts.** Generation can only *select and reorder* facts from your reviewed resume.
+   A separate validator re-checks every generated or hand-edited version (skills, roles, dates, degrees, numbers, and any job-text
+   term absent from the resume) and blocks approval on failure. Job-posting text is treated as untrusted data, so
+   prompt-injection has nothing to steer. → `services/resume_gen.py`
+2. **Never duplicate, never fake.** One application per (user, job) is enforced by a DB constraint; a submission is *claimed*
+   with an atomic compare-and-set so only one worker can send it; an unknown outcome is parked as "confirmation pending" and
+   never auto-retried. → `services/applications.py`
+3. **Honest data.** A job's posted date is only ever an original publication date; "last modified" is never promoted to it.
+   Salaries are compared only when currency, period and gross/net basis are comparable. → `services/matching.py`, `ingest.py`
+4. **Idempotent, restartable automation.** The scheduler takes a per-profile database lock, retries with exponential backoff,
+   dead-letters repeated failures, and recovers stale runs; one failing source never stops the others. → `services/scheduler.py`
+5. **Pluggable edges, transparent limits.** Job sources and submitters sit behind small interfaces. Anything not implemented
+   (real employer submission, an LLM) is labelled as such rather than faked. → `connectors/`, `docs/integrations.md`
+
+## Architecture
+
+```mermaid
+flowchart LR
+    U([User]) --> W[Next.js web app]
+    W -- REST + bearer token --> A[FastAPI API]
+    G([Google]) -. OAuth sign-in .-> A
+
+    subgraph Backend
+      A --> S[Services:<br/>matching · resume generation + validation<br/>applications · reports]
+      SCH[Scheduler<br/>every 24h, DB locks, retries] --> E[Search engine]
+      A -- manual run --> E
+      E --> C[Source connectors<br/>Greenhouse · Lever · Ashby]
+      E --> S
+    end
+
+    C -- public APIs --> J[(Job boards)]
+    S --> D[(PostgreSQL / SQLite)]
+    E --> D
+    S --> F[(Encrypted file storage<br/>resumes + generated docs)]
+```
+
+**One search run:** scheduler (or "Run now") → lock the profile → fetch each configured board → normalize and de-duplicate
+→ apply hard filters and score → store new matches → (per automation setting) generate and validate a tailored resume and
+prepare an application → write a daily report and notifications. Applications then wait for **your** approval.
+
+**Automation levels** (Settings → Automation): *discovery only* · *prepare for review* (default) · *fill forms and request
+approval* (reserved) · *auto-submit to authorized integrations* (explicit consent, revocable, pausable).
+
+**Stack:** FastAPI, SQLAlchemy 2, Alembic, Pydantic · Next.js (App Router), Tailwind, React Hook Form + Zod · SQLite (dev) or
+PostgreSQL · Fernet-encrypted file storage · Docker Compose · GitHub Actions.
+
+## Quick start
 
 Requires Python 3.12+ and Node 20+.
 
 ```bash
-# 1. backend
+# backend
 cd backend
 python -m venv .venv && source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp ../.env.example .env                                   # then edit SECRET_KEY
-alembic upgrade head                                      # creates the SQLite dev DB (./jobpilot.db)
-uvicorn app.main:app --port 8000                          # API + OpenAPI docs at http://localhost:8000/docs
+cp ../.env.example .env                                   # set SECRET_KEY
+alembic upgrade head                                      # SQLite dev DB
+uvicorn app.main:app --port 8000                          # API docs: http://localhost:8000/docs
 
-# 2. scheduler (separate terminal, same venv + env) — runs searches on each user's interval (default 24h)
+# scheduler (second terminal, same venv)
 python -m app.scheduler
 
-# 3. frontend (separate terminal)
-cd frontend
-cp .env.example .env.local
-npm install
-npm run dev                                               # http://localhost:3000
+# frontend (third terminal)
+cd frontend && cp .env.example .env.local && npm install && npm run dev   # http://localhost:3000
 ```
 
-Register at `/register`, upload a resume (Resume Manager), then **Job Search Preferences → add a source** (e.g. Greenhouse
-board `gitlab`, Lever site `spotify`, Ashby board `ramp`; no credentials needed) → *Save first, then run search now*.
+> **Windows:** if PowerShell refuses to activate the venv ("running scripts is disabled"), skip activation and prefix
+> commands with the venv's Python, e.g. `.venv\Scripts\python -m pytest -q`.
 
-### Docker (written, **not yet run**)
-`docker compose up --build` starts Postgres, Redis, API (runs migrations), scheduler and web. See the note at the top of
-`docker-compose.yml`: it was authored on a machine without Docker and has never been executed.
+Then register, upload a resume, add a source in **Job Search Preferences** (Greenhouse board `gitlab`, Lever site `spotify`,
+Ashby board `ramp`; no credentials needed), and run a search.
 
-## Environment variables
-See [`.env.example`](.env.example) (every variable is commented). Essentials:
+**Docker:** `cp .env.example .env && docker compose up --build` starts Postgres, Redis, API, scheduler and web.
 
-| Variable | Purpose |
-|---|---|
-| `SECRET_KEY` | Signs session tokens **and derives the file-encryption key**. Required when `ENV=production`. |
-| `DATABASE_URL` | `sqlite:///./jobpilot.db` (dev) or `postgresql+psycopg://…` |
-| `STORAGE_DIR` | Encrypted document storage |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Optional Google sign-in; see [docs/integrations.md](docs/integrations.md#google-sign-in-oauth-20--openid-connect) |
-| `SANDBOX_MODE` | `true` = only the test-double submitter exists; nothing is ever sent to an employer |
-| `SCHEDULER_POLL_SECONDS` | How often the scheduler checks for due profiles |
-| `NEXT_PUBLIC_API_URL` | Frontend → API base URL |
+## Configuration
+Everything is in [`.env.example`](.env.example) (each variable commented). Essentials: `SECRET_KEY` (signs sessions **and**
+derives the file-encryption key), `DATABASE_URL`, `SANDBOX_MODE`, optional `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`
+(see [Google sign-in setup](docs/integrations.md#google-sign-in-oauth-20--openid-connect)).
 
-## Migrations
-```bash
-cd backend
-alembic upgrade head                                  # apply
-alembic revision --autogenerate -m "describe change"  # after editing app/models.py
-alembic check                                         # CI: fails if models and migrations drift
-```
-
-## Job sources and AI providers
-- **Sources:** Greenhouse, Lever, Ashby public job-board APIs. All three were exercised against the live APIs (see
-  verification below). Add more via the connector interface: [docs/integrations.md](docs/integrations.md).
-- **AI:** `LLM_PROVIDER=rules` is the only provider: deterministic, local, no data leaves your server. There is no LLM
-  integration yet; the interface boundary is described in [docs/architecture.md](docs/architecture.md).
-
-## Enabling the 24-hour scheduler
-It is a separate process (`python -m app.scheduler`, or the `scheduler` service in compose). Each tick it finds active
-users' active search profiles whose last run is older than their interval (Automation Settings, default 24 h), takes a
-database lock per profile, runs the search with bounded exponential-backoff retries, and writes a report + notifications.
-Failures after the retry budget go to the `dead_letters` table and raise a "needs attention" notification.
-Optional Celery deployment (needs Redis): `celery -A app.worker worker -B` (**untested**).
-
-## Tests
+## Tests and CI
 ```bash
 cd backend && pytest -q                      # 93 tests
-cd frontend && npm run lint && npm run build # type-check + production build
+cd frontend && npm run lint && npm run build
 ```
-All HTTP to job boards is mocked in the test-suite (`tests/conftest.py::FakeWeb`); live connectors were checked separately.
+GitHub Actions runs four jobs on every push: backend tests (SQLite), frontend type-check + build, the same backend tests
+**against a PostgreSQL 16 container** (with migration apply/drift/downgrade checks), and a **Docker Compose** build with an
+API/web/scheduler smoke test. All were green on the latest commit. Job-board and Google traffic is mocked in tests; the
+connectors were also checked once against the live Greenhouse, Lever and Ashby APIs.
 
 ## Documentation
 [Architecture](docs/architecture.md) · [API](docs/api.md) · [Integrations](docs/integrations.md) ·
 [Security & privacy](docs/security.md) · [Operations](docs/operations.md)
 
-## Verification record (what was actually run)
-- Backend: **93 passed** (incl. 10 Google OAuth tests with a mocked Google; resume parsing/integrity, search/dedup/incremental, applications/concurrency, scheduler/locks/retries, security).
-- Live connectors: Greenhouse (`gitlab`: 204 jobs, `anthropic`: 638), Lever (`spotify`: 80), Ashby (`ramp`: 158), each with reliable posted dates.
-- Live end-to-end through the real API: GitLab+Spotify → 284 listings, 20 qualified, 4 applications prepared; a second run created 0 duplicates.
-- Browser (production build): register → login → dashboard; jobs table; application review page; approve → submit (sandbox) → "Submitted"; reports, resumes, preferences pages render with live data.
-- Alembic: `upgrade head`, `check` (no drift), `downgrade base` on SQLite.
-- Frontend: `tsc --noEmit` and `next build` clean.
-
 ## Known limitations
-Real, material gaps, by priority:
-1. **No real application submission.** Tier 1 needs employer/ATS-issued API credentials, and none is implemented. The only
-   submitter is the sandbox test double. Tier 2 (browser form filling) is not built. Everything else becomes a manual package.
-2. **No LLM.** Tailoring is deterministic reordering of existing content with strict validation. It will not rewrite
-   wording, and the resume parser is heuristic (unusual layouts parse imperfectly; users correct it in the UI).
-3. **Not verified on PostgreSQL, Redis, Docker or Celery.** SQLite + in-process scheduler only. SQLite uses
-   `BEGIN IMMEDIATE`, which serialises writers: fine for dev/small use, use Postgres for real multi-user load.
-4. **Source coverage is three public ATS board APIs.** No aggregator or generic career-page connector yet; board names are entered by the user.
-5. **Frontend has no automated tests**; it was checked by hand in a browser. File upload and several form-save paths were verified via API, not by clicking.
-6. Google OAuth is only tested against a mock (no real Google credentials were available). Not implemented: other OAuth providers, malware scanning hook, SMTP email (console only), data-retention purge job (setting is stored),
-   report delivery-hour scheduling (reports are created at run time), automated backups (see operations doc),
-   Redis-backed rate limiter (in-process only), httpOnly-cookie sessions (token is in `localStorage`).
-7. Dedup is conservative: same company/title/location with a different description is flagged `needs_dedup_review`, not merged,
-   and there is no UI to resolve the flag yet.
-
-## Acceptance criteria — honest status
-| # | Criterion | Status |
-|---|---|---|
-| 1 | Register / log in | ✅ tests + browser |
-| 2 | Upload resume, inspect extracted data | ✅ tests (PDF/DOCX/bad files); UI renders it; upload clicked via API only |
-| 3 | LinkedIn URL + editable keywords | ✅ API tests; UI renders, not click-tested. No automatic LinkedIn import (by design) |
-| 4 | Configure preferences | ✅ API tests; form renders, save path not click-tested |
-| 5 | Real jobs from ≥1 source | ✅ live Greenhouse/Lever/Ashby |
-| 6 | 30-day window on first search | ✅ tests + live |
-| 7 | Repeat runs deduplicate | ✅ tests + live |
-| 8 | Filtering per saved profile | ✅ tests |
-| 9 | Original description + source links | ✅ tests + browser |
-| 10 | Tailored resume w/o unsupported facts | ✅ validator tests incl. prompt-injection; reorder-only |
-| 11 | Inspect and approve resume | ✅ browser |
-| 12 | Supported apps submitted via authorized mechanisms | ❌ **sandbox only; no real integration** |
-| 13 | Manual-application package | ✅ tests + browser |
-| 14 | Confirmed apps in history w/ right version + date | ✅ tests; browser shows the submitted state |
-| 15 | Retries/concurrency can't double-submit | ✅ 8-thread test on SQLite |
-| 16 | 24h scheduler independent of browser | 🟡 tested with a simulated clock and a live loop smoke-test; not observed across a real 24 h |
-| 17 | Daily report of new jobs + actions | ✅ tests + browser |
-| 18 | Failures / unavailable sources visible | ✅ tests |
-| 19 | No cross-user access | ✅ tests |
-| 20 | Starts from docs on a clean machine | 🟡 the non-Docker path was followed on a fresh machine; Docker path untested |
+1. **No real application submission.** The only submitter is a labelled **sandbox test double**. Employer-authorized APIs and
+   browser form-filling are not implemented; everything else becomes a manual-apply package.
+2. **No LLM.** Tailoring is deterministic reordering with strict validation; the resume parser is heuristic, so you review and
+   correct it in the UI.
+3. **Not exercised:** Google sign-in against real Google (mock only), Celery/Redis workers, and any automated frontend/browser tests.
+4. **Three sources** (public ATS board APIs), with board names entered by you. No generic career-page crawler.
+5. Not built: other OAuth providers, malware scanning, real email sending, the data-retention purge job, automated backups,
+   a Redis-backed rate limiter, httpOnly-cookie sessions (the token is in `localStorage`), and a UI to resolve flagged
+   possible duplicates.
