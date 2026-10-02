@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { api, fmtDate, openSigned, useApi } from "@/lib/api";
+import ListInput from "@/components/ListInput";
 import { Button, Card, Chip, Empty, ErrorBox, Field, Input, Loading, Notice, PageHeader, Table, Td, Textarea, Th, useToast } from "@/components/ui";
 
 function Editor({ resume, onSaved }: { resume: any; onSaved: () => void }) {
@@ -26,7 +27,7 @@ function Editor({ resume, onSaved }: { resume: any; onSaved: () => void }) {
         <Field label="Phone"><Input value={p.phone || ""} onChange={(e) => set("phone", e.target.value)} /></Field>
       </div>
       <Field label="Summary"><Textarea rows={3} value={p.summary || ""} onChange={(e) => set("summary", e.target.value)} /></Field>
-      <Field label="Skills" hint="Comma separated"><Textarea rows={2} value={(p.skills || []).join(", ")} onChange={(e) => set("skills", e.target.value.split(",").map((s) => s.trim()).filter(Boolean))} /></Field>
+      <Field label="Skills" hint="Comma separated"><ListInput multiline rows={2} value={p.skills || []} onChange={(v) => set("skills", v)} /></Field>
       <div className="space-y-3">
         <div className="text-sm font-medium text-slate-700">Experience</div>
         {p.experience.map((e: any, i: number) => (
@@ -37,15 +38,15 @@ function Editor({ resume, onSaved }: { resume: any; onSaved: () => void }) {
               <Input aria-label="Start" placeholder="Start (YYYY-MM)" value={e.start || ""} onChange={(x) => setExp(i, "start", x.target.value)} />
               <Input aria-label="End" placeholder="End (YYYY-MM or present)" value={e.end || ""} onChange={(x) => setExp(i, "end", x.target.value)} />
             </div>
-            <Textarea aria-label="Bullets" rows={4} placeholder="One achievement/responsibility per line" value={e.bullets.join("\n")} onChange={(x) => setExp(i, "bullets", lines(x.target.value))} />
+            <ListInput multiline mode="lines" aria-label="Bullets" rows={4} placeholder="One achievement/responsibility per line" value={e.bullets} onChange={(v) => setExp(i, "bullets", v)} />
             <Button variant="ghost" onClick={() => set("experience", p.experience.filter((_: any, j: number) => j !== i))}>Remove role</Button>
           </div>
         ))}
         <Button variant="secondary" onClick={() => set("experience", [...p.experience, { title: "", company: "", start: "", end: "", bullets: [] }])}>Add role</Button>
       </div>
-      <Field label="Education" hint="One entry per line"><Textarea rows={3} value={(p.education || []).map((x: any) => x.text).join("\n")} onChange={(e) => set("education", lines(e.target.value).map((t) => ({ text: t, degree: null, year: (t.match(/(19|20)\d{2}/) || [null])[0] })))} /></Field>
-      <Field label="Certifications" hint="One per line"><Textarea rows={2} value={(p.certifications || []).join("\n")} onChange={(e) => set("certifications", lines(e.target.value))} /></Field>
-      <Field label="Achievements" hint="One per line"><Textarea rows={2} value={(p.achievements || []).join("\n")} onChange={(e) => set("achievements", lines(e.target.value))} /></Field>
+      <Field label="Education" hint="One entry per line"><ListInput multiline mode="lines" rows={3} value={(p.education || []).map((x: any) => x.text)} onChange={(v) => set("education", v.map((t) => ({ text: t, degree: null, year: (t.match(/(19|20)\d{2}/) || [null])[0] })))} /></Field>
+      <Field label="Certifications" hint="One per line"><ListInput multiline mode="lines" rows={2} value={p.certifications || []} onChange={(v) => set("certifications", v)} /></Field>
+      <Field label="Achievements" hint="One per line"><ListInput multiline mode="lines" rows={2} value={p.achievements || []} onChange={(v) => set("achievements", v)} /></Field>
       <Button busy={busy} onClick={save}>Save corrections</Button>
     </div>
   );

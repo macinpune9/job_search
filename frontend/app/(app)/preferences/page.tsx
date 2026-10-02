@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { ApiError, api, fmtDate, useApi } from "@/lib/api";
+import ListInput from "@/components/ListInput";
 import { Button, Card, Chip, ErrorBox, Field, Input, Loading, Notice, PageHeader, Select, Textarea, useToast } from "@/components/ui";
 
 const EMPLOYMENT = [["permanent", "Permanent / full-time"], ["part_time", "Part-time"], ["fixed_term", "Fixed-term contract"], ["temporary", "Temporary contract"], ["freelance", "Freelance / contractor"], ["contract_to_hire", "Contract-to-hire"], ["internship", "Internship"]];
@@ -133,7 +134,7 @@ export default function Preferences() {
                 <div key={i} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 p-2">
                   <Input aria-label="Keyword" value={k.term} onChange={(e) => setKw(i, { term: e.target.value })} className="w-48" />
                   <Select aria-label="Kind" value={k.kind} onChange={(e) => setKw(i, { kind: e.target.value })} className="w-32">{KINDS.map((x) => <option key={x}>{x}</option>)}</Select>
-                  <Input aria-label="Synonyms" placeholder="synonyms, comma separated" value={(k.synonyms || []).join(", ")} onChange={(e) => setKw(i, { synonyms: csv(e.target.value) })} className="w-56" />
+                  <ListInput aria-label="Synonyms" placeholder="synonyms, comma separated" value={k.synonyms || []} onChange={(v) => setKw(i, { synonyms: v })} className="w-56" />
                   <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={!!k.required} disabled={k.excluded} onChange={(e) => setKw(i, { required: e.target.checked })} /> required</label>
                   <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={!!k.excluded} onChange={(e) => setKw(i, { excluded: e.target.checked, required: false })} /> exclude</label>
                   <Button variant="ghost" aria-label={`Remove ${k.term}`} onClick={() => set("keywords", f.keywords.filter((_: any, j: number) => j !== i))}>Remove</Button>
@@ -149,8 +150,8 @@ export default function Preferences() {
         </Card>
         <Card title="Role & employment">
           <div className="space-y-3">
-            <Field label="Target job titles" hint="Comma separated"><Input value={(f.role_preferences.target_titles || []).join(", ")} onChange={(e) => nest("role_preferences", "target_titles", csv(e.target.value))} /></Field>
-            <Field label="Alternative titles"><Input value={(f.role_preferences.alternative_titles || []).join(", ")} onChange={(e) => nest("role_preferences", "alternative_titles", csv(e.target.value))} /></Field>
+            <Field label="Target job titles" hint="Comma separated"><ListInput value={f.role_preferences.target_titles || []} onChange={(v) => nest("role_preferences", "target_titles", v)} /></Field>
+            <Field label="Alternative titles"><ListInput value={f.role_preferences.alternative_titles || []} onChange={(v) => nest("role_preferences", "alternative_titles", v)} /></Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Seniority"><Select value={f.role_preferences.seniority || ""} onChange={(e) => nest("role_preferences", "seniority", e.target.value)}><option value="">Any</option>{["junior", "mid", "senior", "staff", "lead", "principal", "manager", "director"].map((s) => <option key={s}>{s}</option>)}</Select></Field>
               <Field label="Job function"><Input value={f.role_preferences.function || ""} onChange={(e) => nest("role_preferences", "function", e.target.value)} /></Field>
@@ -181,7 +182,7 @@ export default function Preferences() {
               <Field label="City"><Input value={f.location_preferences.city || ""} onChange={(e) => nest("location_preferences", "city", e.target.value)} /></Field>
               <Field label="Postal code"><Input value={f.location_preferences.postal_code || ""} onChange={(e) => nest("location_preferences", "postal_code", e.target.value)} /></Field>
               <Field label="Search radius"><div className="flex gap-1"><Input type="number" value={f.location_preferences.radius || ""} onChange={(e) => nest("location_preferences", "radius", +e.target.value)} /><Select value={f.location_preferences.unit || "km"} onChange={(e) => nest("location_preferences", "unit", e.target.value)} className="w-20"><option>km</option><option>mi</option></Select></div></Field>
-              <Field label="Languages"><Input value={(f.other_filters.languages || []).join(", ")} onChange={(e) => nest("other_filters", "languages", csv(e.target.value))} /></Field>
+              <Field label="Languages"><ListInput value={f.other_filters.languages || []} onChange={(v) => nest("other_filters", "languages", v)} /></Field>
             </div>
             <div className="flex flex-wrap gap-4 text-sm">
               <label className="flex items-center gap-2"><input type="checkbox" checked={!!f.location_preferences.strict} onChange={(e) => nest("location_preferences", "strict", e.target.checked)} /> Location is a hard filter</label>
@@ -193,7 +194,7 @@ export default function Preferences() {
         <Card title="Exclusions (hard filters)" className="xl:col-span-2">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[["companies", "Excluded companies"], ["industries", "Excluded industries"], ["roles", "Excluded roles"], ["keywords", "Excluded words"]].map(([k, l]) => (
-              <Field key={k} label={l} hint="Comma separated"><Textarea rows={2} value={(f.exclusions[k] || []).join(", ")} onChange={(e) => nest("exclusions", k, csv(e.target.value))} /></Field>
+              <Field key={k} label={l} hint="Comma separated"><ListInput multiline rows={2} value={f.exclusions[k] || []} onChange={(v) => nest("exclusions", k, v)} /></Field>
             ))}
           </div>
         </Card>
