@@ -1,0 +1,63 @@
+# NOTE: written but NOT executed during development (the build machine had no Docker). Review before first use.
+# Dev stack: PostgreSQL + Redis + API + scheduler + frontend.   docker compose up --build
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: jobpilot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-jobpilot-dev-only}
+      POSTGRES_DB: jobpilot
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobpilot"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://jobpilot:${POSTGRES_PASSWORD:-jobpilot-dev-only}@db:5432/jobpilot
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_DIR: /data/storage
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    ports: ["8000:8000"]
+    volumes: [files:/data/storage]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+
+  # The 24-hour scheduler. Works without a browser open. Run exactly the one you prefer:
+  scheduler:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://jobpilot:${POSTGRES_PASSWORD:-jobpilot-dev-only}@db:5432/jobpilot
+      STORAGE_DIR: /data/storage
+    command: python -m app.scheduler
+    volumes: [files:/data/storage]
+    depends_on:
+      api: {condition: service_healthy}
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    ports: ["3000:3000"]
+    depends_on: [api]
+
+volumes:
+  pgdata:
+  files:

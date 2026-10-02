@@ -1,0 +1,67 @@
+"use client";
+import Link from "next/link";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { fmtDate, useApi } from "@/lib/api";
+import { Card, Empty, ErrorBox, Loading, PageHeader, Stat, StatusBadge } from "@/components/ui";
+
+export default function Dashboard() {
+  const { data: d, error, loading } = useApi<any>("/api/dashboard");
+  const { data: runs } = useApi<any[]>("/api/search-runs?limit=10");
+  if (loading) return <Loading />;
+  if (error || !d) return <ErrorBox message={error} />;
+  const funnel = [
+    { name: "Discovered", v: d.total_jobs_discovered }, { name: "Matching", v: d.matching_jobs },
+    { name: "Ready/review", v: d.ready_for_review_or_apply }, { name: "Submitted", v: d.applications_submitted },
+  ];
+  const nothingYet = d.total_jobs_discovered === 0;
+  return (
+    <>
+      <PageHeader title="Dashboard" subtitle="Live numbers from your search history." />
+      {nothingYet && (
+        <div className="mb-6"><Empty title="No jobs discovered yet" hint="Upload a resume, create a search profile with at least one job source, then run a search."
+          action={<div className="flex justify-center gap-2"><Link className="text-brand-600 underline" href="/resumes">Upload resume</Link><Link className="text-brand-600 underline" href="/preferences">Set up search</Link></div>} /></div>
+      )}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Stat label="Jobs discovered" value={d.total_jobs_discovered} />
+        <Stat label="New (24h)" value={d.new_jobs_24h} />
+        <Stat label="Matching criteria" value={d.matching_jobs} />
+        <Stat label="Ready for review/apply" value={d.ready_for_review_or_apply} />
+        <Stat label="Applications submitted" value={d.applications_submitted} />
+        <Stat label="Need manual action" value={d.manual_action_required} />
+        <Stat label="Interviews" value={d.interviews} />
+        <Stat label="Search runs completed" value={d.search_runs_completed} />
+      </div>
+      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+        <Card title="Pipeline" className="lg:col-span-2">
+          <div className="h-56" aria-label="Pipeline chart">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={funnel}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="name" fontSize={12} /><YAxis allowDecimals={false} fontSize={12} /><Tooltip />
+                <Bar dataKey="v" fill="#4f46e5" radius={[4, 4, 0, 0]} /></BarChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+        <Card title="Schedule">
+          <dl className="space-y-3 text-sm">
+            <div><dt className="text-slate-500">Last successful run</dt><dd className="font-medium">{fmtDate(d.last_successful_run)}</dd></div>
+            <div><dt className="text-slate-500">Next scheduled search</dt><dd className="font-medium">{d.automation_paused ? "Paused" : fmtDate(d.next_scheduled_search)}</dd></div>
+            <div><dt className="text-slate-500">Recent runs</dt>
+              <dd className="mt-1 space-y-1">{(runs || []).slice(0, 4).map((r) => <div key={r.id} className="flex justify-between text-xs"><span>{fmtDate(r.started_at)}</span><span className={r.status === "completed" ? "text-emerald-700" : r.status === "failed" ? "text-red-600" : "text-amber-700"}>{r.status}</span></div>)}
+                {(runs || []).length === 0 && <span className="text-slate-400">None yet</span>}</dd></div>
+          </dl>
+        </Card>
+      </div>
+      <Card title="Recent application activity" className="mt-6">
+        {d.recent_activity.length === 0 ? <p className="text-sm text-slate-500">No application activity yet.</p> : (
+          <ul className="divide-y divide-slate-100">
+            {d.recent_activity.map((a: any, i: number) => (
+              <li key={i} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                <Link href={`/history/${a.application_id}`} className="font-medium text-slate-800 hover:underline">{a.title} · {a.company}</Link>
+                <span className="flex items-center gap-2 text-slate-500">{a.event.replace(/_/g, " ")} {a.status && <StatusBadge status={a.status} />} <span className="text-xs">{fmtDate(a.at)}</span></span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+    </>
+  );
+}
