@@ -71,6 +71,7 @@ jobs:
       - name: smoke test
         run: |
           set -e
+          trap 'echo "::error::smoke test failed at script line $LINENO"' ERR
           curl -fsS http://localhost:8000/health
           curl -fsS -o /dev/null -w "web /login -> %{http_code}\n" http://localhost:3000/login
           curl -fsS -X POST http://localhost:8000/api/auth/register -H 'Content-Type: application/json' \
@@ -79,7 +80,15 @@ jobs:
             -d '{"email":"ci@example.com","password":"ci-password-123"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
           curl -fsS http://localhost:8000/api/dashboard -H "Authorization: Bearer $TOKEN"
           echo; docker compose ps
-          docker compose logs scheduler | grep -q "scheduler started"
+          for i in $(seq 1 30); do
+            docker compose logs scheduler 2>&1 | grep -q "scheduler started" && break
+            sleep 1
+          done
+          if ! docker compose logs scheduler 2>&1 | grep -q "scheduler started"; then
+            echo "::error::scheduler never reported startup"
+            docker compose logs scheduler 2>&1 | tail -15 | while IFS= read -r l; do echo "::error::${l//%/%25}"; done
+            exit 1
+          fi
       - name: logs on failure
         if: failure()
         run: docker compose logs --no-color --tail=100
