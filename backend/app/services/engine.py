@@ -10,11 +10,13 @@ from sqlalchemy.orm import Session
 
 from .. import connectors
 from ..connectors.base import ConnectorError, ConnectorUnavailable
+from ..config import get_settings
 from ..db import utcnow
 from ..models import (Application, AutomationSettings, ConnectorHealth, Job, JobMatch, JobSourceListing,
                       JobStatus, Resume, ResumeVersion, SearchProfile, SearchRun, SourceCursor, User)
 from . import applications as appsvc
-from . import matching, reports, versions
+from . import ai_match, matching, reports, versions
+from .llm import LLMClient, llm_for_user
 from .ingest import upsert_listing
 
 log = logging.getLogger("jobpilot.engine")
@@ -52,6 +54,8 @@ def run_search(db: Session, profile_id: int, trigger: str = "manual", run_id: in
     structured = resume.structured_profile if resume else None
     auto = db.scalar(select(AutomationSettings).where(AutomationSettings.user_id == sp.user_id)) or AutomationSettings(user_id=sp.user_id)
     user = db.get(User, sp.user_id)
+    llm: LLMClient | None = llm_for_user(db, sp.user_id) if resume and resume.structured_profile else None
+    fh = ai_match.facts_hash(structured) if llm else None
 
     stats = Counter()
     skipped: Counter = Counter()
@@ -102,6 +106,9 @@ def run_search(db: Session, profile_id: int, trigger: str = "manual", run_id: in
                     up = upsert_listing(db, raw)
                     m = db.scalar(select(JobMatch).where(JobMatch.search_profile_id == sp.id, JobMatch.job_id == up.job.id))
                     mr = matching.evaluate(up.job, sp, structured)
+                    rules_score = mr.score
+                    if llm and m is not None and m.ai_analysis and m.ai_analysis.get("key") == ai_match.ai_key(fh, up.job):
+                        ai_match.apply_ai(mr, m.ai_analysis, sp)  # cached AI result: free
                     if m is None:
                         m = JobMatch(user_id=sp.user_id, search_profile_id=sp.id, job_id=up.job.id, first_run_id=run.id,
                                      workflow_status=JobStatus.NEEDS_REVIEW if up.job.needs_dedup_review else JobStatus.NEW)
@@ -117,6 +124,7 @@ def run_search(db: Session, profile_id: int, trigger: str = "manual", run_id: in
                     elif mr.qualified and not m.qualified:
                         m.first_run_id = m.first_run_id or run.id  # newly qualifies (e.g. profile edited)
                         new_match_ids.append(m.id)
+                    m.rules_score = rules_score
                     m.match_score, m.matching_factors, m.exclusion_reasons = mr.score, mr.factors, mr.exclusions
                     m.qualified, m.evaluated_at = mr.qualified, utcnow()
                     if up.created_job:
@@ -151,6 +159,15 @@ def run_search(db: Session, profile_id: int, trigger: str = "manual", run_id: in
         ok_sources += 1
         db.commit()
 
+    if llm and resume and ok_sources:
+        try:
+            ai_match.ai_pass(db, sp, resume, llm, run, stats, new_match_ids, errors)
+            db.commit()
+        except Exception as e:  # noqa: BLE001 - AI is an enhancement; never fail the run because of it
+            db.rollback()
+            errors.append(f"AI scoring: {type(e).__name__}")
+            log.exception("ai_pass failed")
+
     # ----- automation policy -----
     if resume and user and auto.mode != "discovery_only" and not auto.paused:
         for mid in new_match_ids:
@@ -162,7 +179,14 @@ def run_search(db: Session, profile_id: int, trigger: str = "manual", run_id: in
                 continue
             try:
                 with db.begin_nested():
-                    rv = versions.generate_for_job(db, resume, job)
+                    use_ai = llm if stats["ai_tailored_attempts"] < get_settings().ai_max_tailor_per_run else None
+                    if use_ai is not None:
+                        stats["ai_tailored_attempts"] += 1
+                    rv = versions.generate_for_job(db, resume, job, use_ai)
+                    if (rv.analysis.get("ai") or {}).get("used"):
+                        stats["ai_tailored"] += 1
+                    elif use_ai is not None:
+                        stats["ai_tailor_fallbacks"] += 1
                     stats["resumes_generated"] += 1
                     cl = None
                     if auto.cover_letters_enabled:
@@ -194,6 +218,8 @@ def run_search(db: Session, profile_id: int, trigger: str = "manual", run_id: in
                     errors.append(f"submit app {a.id}: {e.code}")
                     db.rollback()
 
+    if llm is not None:
+        stats["ai_input_tokens"], stats["ai_output_tokens"] = getattr(llm, "input_tokens", 0), getattr(llm, "output_tokens", 0)
     run.stats = {**dict(stats), "skipped_reasons": dict(skipped)}
     run.source_statistics = src_stats
     run.error_summary = "; ".join(errors)[:2000] or None

@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+import sqlalchemy as sa
 from sqlalchemy import (JSON, Boolean, Float, ForeignKey, Index, Integer, String,
                         Text, UniqueConstraint)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -221,6 +222,8 @@ class JobMatch(Base):
     workflow_status: Mapped[str] = mapped_column(String(48), default=JobStatus.NEW)
     reported: Mapped[bool] = mapped_column(Boolean, default=False)  # included in a daily report already
     first_run_id: Mapped[int | None] = mapped_column(Integer)
+    rules_score: Mapped[float | None] = mapped_column(Float)      # score before any AI blending
+    ai_analysis: Mapped[dict | None] = mapped_column(JSON)        # {key, fit_score, matched, gaps, reasoning, model}
     evaluated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     __table_args__ = (UniqueConstraint("search_profile_id", "job_id", name="uq_match_profile_job"),
                       Index("ix_match_user_qualified", "user_id", "qualified"))
@@ -331,6 +334,9 @@ class AutomationSettings(Base):
     email_notifications: Mapped[bool] = mapped_column(Boolean, default=False)
     report_hour_local: Mapped[int] = mapped_column(Integer, default=8)
     data_retention_days: Mapped[int] = mapped_column(Integer, default=730)
+    # AI features (job-fit scoring, resume rewording, keyword suggestions): off until the user opts in.
+    ai_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa.false())
+    ai_consent_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
 
 class Integration(Base):

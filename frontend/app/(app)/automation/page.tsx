@@ -49,6 +49,18 @@ export default function Automation() {
           <Button busy={busy} disabled={f.mode === "auto_submit_authorized" && !f.auto_submit_consent_at && !consent} onClick={() => save({ mode: f.mode, ...(consent ? { consent_to_auto_submit: true } : {}) })}>Save automation level</Button>
         </div>
       </Card>
+      <Card title="AI assistance (optional)" className="mt-4">
+        <div className="space-y-3 text-sm">
+          <p>With AI on, Claude (a) judges how well each job fits your resume by meaning, not just keywords, and (b) rewrites your resume bullets for each job. Every rewrite is machine-checked against your original resume and audited by a second AI pass, and is discarded in favour of the safe rules-based version if it adds anything you have not documented. You still approve every resume.</p>
+          <Notice tone="warn">{f.ai_disclosure}</Notice>
+          {!f.ai_available ? <Notice>No AI provider is configured on this server. Ask the administrator to set <code>LLM_PROVIDER=anthropic</code> and <code>ANTHROPIC_API_KEY</code>.</Notice> : (
+            <label className="flex items-start gap-2">
+              <input type="checkbox" className="mt-1" checked={!!f.ai_enabled} onChange={(e) => save({ ai_enabled: e.target.checked })} />
+              <span>Use AI ({f.ai_model}) for job matching, resume rewriting and keyword suggestions. I understand what is sent.</span>
+            </label>)}
+          {f.ai_enabled && f.ai_consent_at && <p className="text-xs text-slate-500">Enabled {new Date(f.ai_consent_at).toLocaleString()}.</p>}
+        </div>
+      </Card>
       <Card title="Schedule, documents & notifications" className="mt-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Search every (hours)" hint="Default 24. Runs on the server even when you're logged out."><Input type="number" min={1} max={168} value={f.run_interval_hours} onChange={(e) => setF({ ...f, run_interval_hours: +e.target.value })} /></Field>

@@ -18,4 +18,4 @@
 - Tokens are kept in browser `localStorage` (XSS-exposed). For hardening serve API and web from one origin and move to an httpOnly, SameSite cookie + CSRF token.
 - Rate limiter is per-process: front with a gateway/Redis limiter when running several API replicas.
 - Retention: the `data_retention_days` setting is stored but **no purge job exists yet**.
-- Third-party AI: none is called. If you add one, tell users exactly what is sent (job text + resume facts) and add an opt-in.
+- Third-party AI (Anthropic): off by default; per-user opt-in with a stored consent time and an in-app disclosure. Name/email/phone/links are never sent. The API key lives only in server config. Job text is delimited as untrusted data, the model has no tools, and outputs are schema-validated, clamped and fact-checked (tested with a stub client and a scripted attacker model; **not** tested against the live model).

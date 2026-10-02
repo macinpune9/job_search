@@ -9,6 +9,7 @@ from .. import connectors
 from ..config import get_settings
 from ..db import get_db, utcnow
 from ..deps import audit, current_user
+from ..services import llm
 from ..models import (Application, ApplicationEvent, AutomationSettings, DailyReport, Integration, Job, JobMatch,
                       JobStatus, Notification, SearchProfile, SearchRun, User, as_dict)
 
@@ -80,7 +81,9 @@ def integrations(user: User = Depends(current_user), db: Session = Depends(get_d
                          "compliance_note": c.compliance_note} for n, c in connectors.REGISTRY.items()],
             "submitters": [{"name": "sandbox", "active": s.sandbox_mode, "note": "Test double. Never contacts employers."}],
             "linkedin": {"mode": "user-provided paste/export only", "note": "No scraping or unauthorized access."},
-            "ai_provider": {"name": s.llm_provider, "note": "'rules' = deterministic, local, no data leaves this server."},
+            "ai_provider": {"name": s.llm_provider if llm.provider_configured() else "rules", "model": s.ai_model if llm.provider_configured() else None,
+                            "note": ("Claude via the Anthropic API, only for users who opt in (Automation Settings)." if llm.provider_configured()
+                                     else "No AI provider configured: deterministic, local rules only; nothing leaves this server.")},
             "configured": [as_dict(i) for i in db.scalars(select(Integration).where(Integration.user_id == user.id))]}
 
 
@@ -97,6 +100,7 @@ class AutomationPatch(BaseModel):
     report_hour_local: int | None = Field(None, ge=0, le=23)
     data_retention_days: int | None = Field(None, ge=30, le=3650)
     consent_to_auto_submit: bool | None = None  # explicit, required for auto_submit_authorized
+    ai_enabled: bool | None = None              # opt in to sending resume facts + job text to the AI provider
 
 
 def _auto(db: Session, user: User) -> AutomationSettings:
@@ -108,10 +112,22 @@ def _auto(db: Session, user: User) -> AutomationSettings:
     return a
 
 
+AI_DISCLOSURE = ("When enabled, JobPilot sends to the AI provider (Anthropic): the text of each job posting being evaluated, and your "
+                 "documented career facts (skills, job titles, employers, dates, bullet points, education, certifications). It does NOT "
+                 "send your name, email, phone, address or links. Providers may retain API data per their own policy. Turn this off at any time.")
+
+
+def _auto_out(a: AutomationSettings) -> dict:
+    s = get_settings()
+    return as_dict(a) | {"sandbox_mode": s.sandbox_mode, "ai_available": llm.provider_configured(),
+                         "ai_model": s.ai_model if llm.provider_configured() else None, "ai_disclosure": AI_DISCLOSURE}
+
+
 @router.get("/automation-settings")
 def get_auto(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    a = _auto(db, user)
     db.commit()
-    return as_dict(_auto(db, user)) | {"sandbox_mode": get_settings().sandbox_mode}
+    return _auto_out(a)
 
 
 @router.patch("/automation-settings")
@@ -119,6 +135,10 @@ def patch_auto(body: AutomationPatch, user: User = Depends(current_user), db: Se
     a = _auto(db, user)
     d = body.model_dump(exclude_unset=True)
     consent = d.pop("consent_to_auto_submit", None)
+    if d.get("ai_enabled") and not llm.provider_configured():
+        raise HTTPException(422, "No AI provider is configured on this server (set LLM_PROVIDER=anthropic and ANTHROPIC_API_KEY).")
+    if "ai_enabled" in d:
+        a.ai_consent_at = utcnow() if d["ai_enabled"] and not a.ai_enabled else (a.ai_consent_at if d["ai_enabled"] else None)
     if d.get("mode") == "auto_submit_authorized" and not (consent or a.auto_submit_consent_at):
         raise HTTPException(422, "Automatic submission requires explicit consent (consent_to_auto_submit=true). "
                                  "It never covers legal attestations, demographic questions, salary or eligibility statements.")
@@ -128,6 +148,6 @@ def patch_auto(body: AutomationPatch, user: User = Depends(current_user), db: Se
         a.auto_submit_consent_at = None  # leaving auto mode revokes consent
     for k, v in d.items():
         setattr(a, k, v)
-    audit(db, user.id, "automation_settings_changed", "automation", a.id, mode=a.mode, paused=a.paused)
+    audit(db, user.id, "automation_settings_changed", "automation", a.id, mode=a.mode, paused=a.paused, ai_enabled=a.ai_enabled)
     db.commit()
-    return as_dict(a) | {"sandbox_mode": get_settings().sandbox_mode}
+    return _auto_out(a)

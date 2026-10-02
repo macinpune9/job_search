@@ -60,6 +60,18 @@ export default function Preferences() {
       toast(`Added ${r.keywords.length} suggestions. Edit or remove any of them.`);
     } catch (e: any) { setErr(e.message); }
   }
+  async function suggestAi() {
+    const rid = f.resume_id || resumes?.find((r) => r.processing_status === "parsed")?.id;
+    if (!rid) return setErr("Upload a resume first.");
+    setBusy("ai");
+    try {
+      const r = await api(`/api/keywords/suggest?resume_id=${rid}&ai=true`);
+      const have = new Set(f.keywords.map((k: any) => k.term.toLowerCase()));
+      const fresh = r.keywords.filter((k: any) => !have.has(k.term.toLowerCase())).map(({ source, ...k }: any) => k);
+      set("keywords", [...f.keywords, ...fresh]);
+      toast(`Added ${fresh.length} suggestions (including AI ideas). Edit or remove any of them.`);
+    } catch (e: any) { setErr(e.message); } finally { setBusy(""); }
+  }
   async function doPreview() {
     if (sel === "new") return toast("Save the profile first", "err");
     setBusy("prev");
@@ -111,7 +123,7 @@ export default function Preferences() {
             </div>
           </div>
         </Card>
-        <Card title="Keywords" className="xl:col-span-2" actions={<><Button variant="secondary" onClick={suggest}>Suggest from my resume</Button><Select aria-label="Match mode" value={f.match_mode} onChange={(e) => set("match_mode", e.target.value)} className="w-auto"><option value="weighted">Weighted</option><option value="or">Any keyword (OR)</option><option value="and">All keywords (AND)</option></Select></>}>
+        <Card title="Keywords" className="xl:col-span-2" actions={<><Button variant="secondary" onClick={suggest}>Suggest from my resume</Button><Button variant="secondary" busy={busy === "ai"} onClick={suggestAi} title="Requires AI to be enabled in Automation Settings">Suggest with AI</Button><Select aria-label="Match mode" value={f.match_mode} onChange={(e) => set("match_mode", e.target.value)} className="w-auto"><option value="weighted">Weighted</option><option value="or">Any keyword (OR)</option><option value="and">All keywords (AND)</option></Select></>}>
           <div className="space-y-3">
             <p className="text-sm text-slate-500">Mark a keyword <b>required</b> only if a job must contain it. <b>Exclude</b> removes jobs that mention it. Everything else just raises the score.</p>
             <div className="space-y-2">

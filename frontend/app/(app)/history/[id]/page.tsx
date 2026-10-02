@@ -91,6 +91,18 @@ export default function ApplicationDetail() {
               <ul className="space-y-1">{v.issues.map((i: any, k: number) => <li key={k} className={i.severity === "error" ? "text-red-700" : "text-amber-700"}>{i.severity === "error" ? "✕" : "!"} {i.code.replace(/_/g, " ")}: {i.detail}</li>)}</ul>
             </div>) : null}
         </Card>
+        {an?.ai && (
+          <Card title="AI tailoring">
+            {an.ai.used ? (
+              <div className="space-y-3 text-sm">
+                <Notice tone="ok">Reworded by AI ({an.ai.model}); passed the automatic fact-check{an.ai.verified ? " and the second-pass audit" : ""}. Review each change below against your original.</Notice>
+                {an.ai.rewrites.length === 0 ? <p className="text-slate-500">The AI kept all bullets unchanged.</p> : an.ai.rewrites.map((r: any, i: number) => (
+                  <div key={i}><div className="font-medium">{r.role}</div>
+                    <div className="grid gap-2 sm:grid-cols-2"><div><div className="text-xs uppercase text-slate-400">Original</div><ul className="ml-4 list-disc">{r.before.map((b: string, j: number) => <li key={j}>{b}</li>)}</ul></div>
+                      <div><div className="text-xs uppercase text-slate-400">Reworded</div><ul className="ml-4 list-disc">{r.after.map((b: string, j: number) => <li key={j}>{b}</li>)}</ul></div></div></div>))}
+              </div>
+            ) : an.ai.fallback_reason ? <Notice tone="warn">AI rewrite not used: {an.ai.fallback_reason}. This is the rules-based version.</Notice> : <p className="text-sm text-slate-500">AI is off for this resume (rules-based tailoring).</p>}
+          </Card>)}
         <Card title="Match & changes">
           {an ? (
             <div className="space-y-3 text-sm">

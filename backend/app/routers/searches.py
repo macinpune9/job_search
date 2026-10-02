@@ -9,7 +9,7 @@ from .. import connectors
 from ..db import SessionLocal, get_db, utcnow
 from ..deps import audit, current_user
 from ..models import (ConnectorHealth, Job, Resume, SearchProfile, SearchRun, SourceCursor, User, as_dict)
-from ..services import engine, keywords, matching
+from ..services import engine, keywords, llm, matching
 from ..services import scheduler as sched
 
 router = APIRouter(prefix="/api", tags=["search"])
@@ -141,14 +141,30 @@ def delete_profile(pid: int, user: User = Depends(current_user), db: Session = D
 
 
 @router.get("/keywords/suggest")
-def suggest_keywords(resume_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def suggest_keywords(resume_id: int, ai: bool = False, user: User = Depends(current_user), db: Session = Depends(get_db)):
     r = db.get(Resume, resume_id)
     if not r or r.user_id != user.id:
         raise HTTPException(404, "Resume not found")
     if not r.structured_profile:
         raise HTTPException(422, "Resume has not been parsed")
-    return {"keywords": keywords.suggest(r.structured_profile),
-            "note": "Suggestions are optional. Nothing is required unless you mark it required."}
+    out = keywords.suggest(r.structured_profile)
+    if ai:
+        client = llm.llm_for_user(db, user.id)
+        if client is None:
+            raise HTTPException(422, "AI features are off. Enable them in Automation Settings (requires a configured AI provider).")
+        try:
+            ideas = client.suggest_keywords(llm.facts_for_ai(r.structured_profile))
+        except llm.LLMError as e:
+            raise HTTPException(502, f"AI suggestions unavailable: {e}")
+        have = {k["term"].lower() for k in out}
+        for terms, kind, weight in ((ideas.target_titles, "title", 2.0), (ideas.alternative_titles, "title", 1.0),
+                                    (ideas.skills, "skill", 1.0), (ideas.related_terms, "other", 0.5)):
+            for t in terms:
+                t = t.strip()
+                if t and t.lower() not in have and len(t) <= 60:
+                    have.add(t.lower())
+                    out.append({"term": t, "kind": kind, "required": False, "excluded": False, "synonyms": [], "weight": weight, "source": "ai"})
+    return {"keywords": out, "note": "Suggestions are optional. Nothing is required unless you mark it required."}
 
 
 class Preview(BaseModel):

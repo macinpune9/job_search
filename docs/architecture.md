@@ -66,6 +66,8 @@ then dead-letters. One failing source never aborts the others.
 (reserved; behaves as prepare); `auto_submit_authorized` requires an explicit consent timestamp (revoked on leaving the mode),
 is blocked while paused, and can only act through registered submitters.
 
-## Where an LLM would plug in
-`resume_gen.generate` (rewording) and `resume_parser.parse_structured`. Keep `validate()` as the gate and treat job text as
-untrusted input. Not implemented; `LLM_PROVIDER` currently only accepts `rules`.
+## AI layer (optional)
+`services/llm.py` (provider interface + Claude adapter with structured outputs, minimised facts, injection-framed prompts),
+`ai_match.py` (blend AI fit with rules; budget; cache), `ai_resume.py` (tailor -> deterministic validate -> AI audit -> retry ->
+rules-based fallback). Rules always run first and own hard filters; AI only refines scores and proposes reworded text.
+Still heuristic and not AI: resume parsing (`resume_parser.py`).

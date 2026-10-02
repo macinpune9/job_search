@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..models import CoverLetter, Job, Resume, ResumeVersion
 from ..security import storage
-from . import resume_gen
+from . import ai_resume, resume_gen
 
 
 def store_version(db: Session, resume: Resume, job: Job | None, content: dict, analysis: dict,
@@ -28,11 +28,22 @@ def store_version(db: Session, resume: Resume, job: Job | None, content: dict, a
     return rv
 
 
-def generate_for_job(db: Session, resume: Resume, job: Job) -> ResumeVersion:
+def generate_for_job(db: Session, resume: Resume, job: Job, llm=None) -> ResumeVersion:
+    """Rules-based tailoring always runs (it supplies the match analysis and the safe fallback). If `llm` is given
+    (user opted in), an AI rewrite replaces it only when it passes the fact-check and the audit."""
     src = resume.structured_profile or {}
     text = f"{job.title}\n{job.description}"
     content, analysis = resume_gen.generate(src, job.title, job.description, job.company_name)
     validation = resume_gen.validate(content, src, text)
+    analysis["ai"] = {"used": False}
+    if llm is not None:
+        ai_content, meta = ai_resume.tailor_with_ai(llm, src, job)
+        if ai_content is not None:
+            content, validation = ai_content, meta.pop("validation")
+            analysis["changes"] = [{"type": "ai_reword", "detail": r["role"],
+                                    "reason": "Bullets reworded by AI for relevance; checked against your original resume"}
+                                   for r in meta["rewrites"]]
+        analysis["ai"] = meta
     return store_version(db, resume, job, content, analysis, validation)
 
 

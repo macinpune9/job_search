@@ -51,9 +51,23 @@ No scraping or automatic import. Users save their profile URL and paste profile 
 content) at `POST /api/profiles/linkedin/import`; the app diffs it against the resume. If you obtain official LinkedIn API
 access, add an importer that feeds the same `linkedin_data` structure.
 
-## AI providers
-Only `LLM_PROVIDER=rules` exists (local, deterministic). See `docs/architecture.md` for where a model would plug in and the
-validation gate it must pass.
+## AI provider (Claude)
+Off unless the server sets `LLM_PROVIDER=anthropic` **and** `ANTHROPIC_API_KEY` (get a key at console.anthropic.com; keep it in
+`backend/.env`, never in git). Each user must then opt in under Automation Settings; the consent time is stored.
+
+| Feature | Model call | Safeguards |
+|---|---|---|
+| Job fit | one structured call per new/changed job that passed all hard filters (capped by `AI_MAX_FIT_CALLS_PER_RUN`, cached per resume+job text+model) | score clamped 0-100, blended with rules score; model has no tools |
+| Resume rewrite | tailor call (+1 retry) and an audit call per resume | roles/dates copied from your resume by code; deterministic validator; audit pass; fallback to rules-based resume |
+| Keywords | one call on request ("Suggest with AI") | suggestions only; nothing becomes required |
+
+Model: `AI_MODEL` (default `claude-opus-5-5`; `claude-sonnet-5-5` is about half the price). Rough cost: a few cents for a job-fit
+call at most; a tailored resume uses 2-3 calls. The per-run caps bound the daily spend. Sent to the provider: job text and your
+documented career facts (skills, titles, employers, dates, bullets, education, certifications) but **not** name, email, phone,
+address or links. Failures (network, refusal, bad output, rate limit) never break a run: the rules-based result is used and the
+run report shows the error count. A rejected API key stops AI calls for that run and appears in the run's error summary.
+
+Check the live integration once with your own key: `cd backend && python -m scripts.ai_smoke`.
 
 ## Email
 `reports.send_email` logs only. Replace with SMTP/provider code and set `email_notifications` per user.

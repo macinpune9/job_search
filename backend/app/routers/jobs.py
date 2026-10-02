@@ -9,6 +9,7 @@ from ..models import (Application, AutomationSettings, CoverLetter, Job, JobMatc
                       ResumeVersion, User, as_dict)
 from ..services import applications as appsvc
 from ..services import versions
+from ..services.llm import llm_for_user
 
 router = APIRouter(prefix="/api", tags=["jobs"])
 
@@ -132,7 +133,7 @@ def prepare(job_id: int, body: PrepareIn | None = None, user: User = Depends(cur
         .order_by(Resume.is_primary.desc(), Resume.uploaded_at.desc()))
     if not resume or resume.user_id != user.id or resume.processing_status != "parsed":
         raise HTTPException(422, "Upload and parse a resume first")
-    rv = versions.generate_for_job(db, resume, job)
+    rv = versions.generate_for_job(db, resume, job, llm_for_user(db, user.id))
     auto = db.scalar(select(AutomationSettings).where(AutomationSettings.user_id == user.id))
     want_cl = body.cover_letter if body.cover_letter is not None else bool(auto and auto.cover_letters_enabled)
     cl = versions.make_cover_letter(db, user.id, resume, job, rv.analysis.get("matched_skills", [])) if want_cl else None

@@ -13,7 +13,8 @@ consequential ones.
 |---|---|
 | Search public job boards (Greenhouse, Lever, Ashby) and de-duplicate results across runs | Scrape sites that forbid it, or bypass logins/CAPTCHAs |
 | Score each job against your keywords and preferences, and show *why* it matched or was excluded | Hide a job without giving a reason |
-| Produce a job-specific ATS-friendly resume (DOCX/PDF) from **your own** resume facts | Add a skill, title, degree, employer, date or metric you don't already have |
+| Produce a job-specific ATS-friendly resume (DOCX/PDF) from **your own** resume facts, reworded by AI if you opt in | Add a skill, title, degree, employer, date or metric you don't already have |
+| Judge job fit by meaning (AI, opt-in) on top of the rules-based filters | Send your name, email or phone to the AI, or use AI at all unless you turn it on |
 | Prepare an application (or a manual-apply package) and wait for your approval | Submit anything by default, or mark "submitted" without confirmation |
 | Keep an immutable history of every status change and resume version used | Ever apply to the same job twice |
 
@@ -21,10 +22,11 @@ consequential ones.
 
 Five principles drive the design; each maps to a concrete mechanism in the code.
 
-1. **Your resume is the only source of facts.** Generation can only *select and reorder* facts from your reviewed resume.
-   A separate validator re-checks every generated or hand-edited version (skills, roles, dates, degrees, numbers, and any job-text
-   term absent from the resume) and blocks approval on failure. Job-posting text is treated as untrusted data, so
-   prompt-injection has nothing to steer. → `services/resume_gen.py`
+1. **Your resume is the only source of facts.** The rules-based generator can only *select and reorder* facts from your
+   reviewed resume. With AI on, Claude may also *reword* bullets, but its draft only supplies bullet text per role index
+   (titles, employers and dates are copied from your resume by code), then must pass a deterministic validator (skills, roles,
+   dates, degrees, numbers, and any job-text term absent from the resume) **and** a second AI audit for changed meaning. One retry
+   with the errors as feedback; otherwise the safe rules-based version is used. Job text is untrusted data. → `services/resume_gen.py`, `ai_resume.py`
 2. **Never duplicate, never fake.** One application per (user, job) is enforced by a DB constraint; a submission is *claimed*
    with an atomic compare-and-set so only one worker can send it; an unknown outcome is parked as "confirmation pending" and
    never auto-retried. → `services/applications.py`
@@ -64,6 +66,12 @@ prepare an application → write a daily report and notifications. Applications 
 **Automation levels** (Settings → Automation): *discovery only* · *prepare for review* (default) · *fill forms and request
 approval* (reserved) · *auto-submit to authorized integrations* (explicit consent, revocable, pausable).
 
+**AI (optional, off by default):** `LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY` on the server, then each user opts in under
+*Automation Settings*. Claude then (1) scores job fit by meaning and blends it with the rules score (hard filters still run first
+and excluded jobs are never sent), (2) rewrites resume bullets per job, and (3) suggests search keywords. Calls are capped per run,
+cached, and use structured outputs; the model has no tools and can never trigger an action. Only documented career facts and the
+job text are sent: **no name, email, phone or links**. See [AI setup](docs/integrations.md#ai-provider-claude).
+
 **Stack:** FastAPI, SQLAlchemy 2, Alembic, Pydantic · Next.js (App Router), Tailwind, React Hook Form + Zod · SQLite (dev) or
 PostgreSQL · Fernet-encrypted file storage · Docker Compose · GitHub Actions.
 
@@ -102,7 +110,7 @@ derives the file-encryption key), `DATABASE_URL`, `SANDBOX_MODE`, optional `GOOG
 
 ## Tests and CI
 ```bash
-cd backend && pytest -q                      # 93 tests
+cd backend && pytest -q                      # 117 tests
 cd frontend && npm run lint && npm run build
 ```
 GitHub Actions runs four jobs on every push: backend tests (SQLite), frontend type-check + build, the same backend tests
@@ -117,8 +125,10 @@ connectors were also checked once against the live Greenhouse, Lever and Ashby A
 ## Known limitations
 1. **No real application submission.** The only submitter is a labelled **sandbox test double**. Employer-authorized APIs and
    browser form-filling are not implemented; everything else becomes a manual-apply package.
-2. **No LLM.** Tailoring is deterministic reordering with strict validation; the resume parser is heuristic, so you review and
-   correct it in the UI.
+2. **AI is optional and only partly proven.** The AI paths are tested with a scripted fake model and a stub SDK client
+   (117 tests), **not against the live Claude API** (no key was available). Run `python -m scripts.ai_smoke` with your key to check
+   it. The strict fact-check can reject legitimate rewrites (it flags reworded text that uses words from the job posting that
+   your resume lacks), in which case you get the rules-based resume. The resume parser itself is still heuristic and you review it.
 3. **Not exercised:** Google sign-in against real Google (mock only), Celery/Redis workers, and any automated frontend/browser tests.
 4. **Three sources** (public ATS board APIs), with board names entered by you. No generic career-page crawler.
 5. Not built: other OAuth providers, malware scanning, real email sending, the data-retention purge job, automated backups,

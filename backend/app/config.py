@@ -19,7 +19,16 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:3000"]
     rate_limit_auth_per_min: int = 10
     rate_limit_default_per_min: int = 300
-    llm_provider: str = "rules"
+    llm_provider: str = "rules"            # "rules" (no AI) or "anthropic"
+    anthropic_api_key: str = ""
+    ai_model: str = "claude-opus-5-5"      # e.g. claude-sonnet-5-5 for lower cost
+    ai_timeout_seconds: float = 120.0
+    ai_max_fit_calls_per_run: int = 40     # job-fit scoring calls per search run (cached results are free)
+    ai_max_tailor_per_run: int = 10        # AI-tailored resumes per search run
+    ai_min_rules_score: float = 10.0       # jobs scoring below this on rules alone are not sent to the AI
+    ai_blend_weight: float = 0.65          # share of the final score that comes from the AI fit score
+    ai_max_job_chars: int = 12000          # job text truncation sent to the model
+    ai_verify_tailoring: bool = True       # second AI pass that audits rewritten bullets for unsupported claims
     scheduler_poll_seconds: int = 60
     redis_url: str = ""
     email_backend: str = "console"
