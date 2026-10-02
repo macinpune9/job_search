@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 _tmp = tempfile.mkdtemp(prefix="jobpilot-test-")
 os.environ.update({
-    "DATABASE_URL": f"sqlite:///{_tmp}/test.db", "STORAGE_DIR": f"{_tmp}/storage", "SECRET_KEY": "test-secret-key-0123456789",
+    "DATABASE_URL": os.environ.get("TEST_DATABASE_URL") or f"sqlite:///{_tmp}/test.db", "STORAGE_DIR": f"{_tmp}/storage", "SECRET_KEY": "test-secret-key-0123456789",
     "RATE_LIMIT_AUTH_PER_MIN": "100000", "RATE_LIMIT_DEFAULT_PER_MIN": "100000", "SANDBOX_MODE": "true",
     "RETRY_BASE_SECONDS": "0",
 })
