@@ -109,9 +109,10 @@ def evaluate(job: Job, sp: SearchProfile, resume_structured: dict | None = None,
 
     active = [k for k in kws if not k.get("excluded")]
     hits = {k["term"]: _term_hit(text, k) for k in active}
-    for k in active:
-        if k.get("required") and not hits[k["term"]]:
-            exclude("missing_required_keyword", k["term"])
+    required = [k["term"] for k in active if k.get("required")]
+    missing = [t for t in required if not hits[t]]
+    if missing:  # one reason per job (not per keyword), so run statistics count jobs
+        exclude("missing_required_keyword", f"{len(missing)} of {len(required)} required keywords missing: " + ", ".join(missing))
     if sp.match_mode == "and" and active and not all(hits.values()):
         exclude("and_mode_missing_keywords", ", ".join(t for t, h in hits.items() if not h))
     if sp.match_mode == "or" and active and not any(hits.values()):

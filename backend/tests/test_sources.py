@@ -226,3 +226,13 @@ def test_manual_import_keeps_hard_exclusion_reasons_visible(client, auth):
     assert "excluded_company" in r["would_normally_be_excluded"]
     m = client.get(f"/api/jobs/{r['job_id']}/match", headers=auth).json()
     assert m["qualified"] is True and m["exclusions"][0]["code"] == "excluded_company"
+
+
+def test_adzuna_accepts_country_names(client, auth, web, monkeypatch):
+    monkeypatch.setattr(get_settings(), "adzuna_app_id", "i")
+    monkeypatch.setattr(get_settings(), "adzuna_app_key", "k")
+    web.adzuna_pages = [[adz(1)]]
+    run = run_now(make_profile(client, auth, sources=[{"source": "adzuna", "board": "Software Test engineer|Zurich|Switzerland"}])["id"])
+    assert run.status == "completed" and web.adzuna_requests[0]["path"].endswith("/jobs/ch/search/1")
+    bad = run_now(make_profile(client, auth, profile_name="b", sources=[{"source": "adzuna", "board": "x y|Zurich|Narnia"}])["id"])
+    assert "country" in bad.source_statistics["adzuna:x y|Zurich|Narnia"]["error"]

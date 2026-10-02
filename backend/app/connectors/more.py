@@ -200,6 +200,9 @@ class RecruiteeConnector(Connector):
         return FetchResult(out, complete=True)
 
 
+_COUNTRY_NAMES = {"switzerland": "ch", "schweiz": "ch", "suisse": "ch", "svizzera": "ch", "germany": "de", "deutschland": "de", "austria": "at",
+                  "österreich": "at", "france": "fr", "italy": "it", "italia": "it", "netherlands": "nl", "belgium": "be",
+                  "united kingdom": "gb", "uk": "gb", "united states": "us", "usa": "us"}
 _ADZUNA_CCY = {"ch": "CHF", "de": "EUR", "at": "EUR", "fr": "EUR", "it": "EUR", "nl": "EUR", "be": "EUR", "gb": "GBP", "us": "USD"}
 
 
@@ -227,9 +230,10 @@ class AdzunaConnector(Connector):
             raise ConnectorUnavailable("Adzuna credentials not configured (set ADZUNA_APP_ID and ADZUNA_APP_KEY)")
         parts = [p.strip() for p in board.split("|")]
         what, where = parts[0], (parts[1] if len(parts) > 1 else "")
-        country = (parts[2] if len(parts) > 2 and parts[2] else "ch").lower()
+        country = (parts[2] if len(parts) > 2 and parts[2] else "ch").strip().lower()
+        country = _COUNTRY_NAMES.get(country, country)
         if not country.isalpha() or len(country) != 2:
-            raise ConnectorError("country must be a 2-letter code")
+            raise ConnectorError("country must be a 2-letter code (e.g. ch) or a country name like Switzerland")
         out: list[RawListing] = []
         for page in range(1, self.MAX_PAGES + 1):
             params = {"app_id": s.adzuna_app_id, "app_key": s.adzuna_app_key, "results_per_page": self.PER_PAGE, "what": what,

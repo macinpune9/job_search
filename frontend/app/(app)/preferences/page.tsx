@@ -128,6 +128,11 @@ export default function Preferences() {
         </Card>
         <Card title="Keywords" className="xl:col-span-2" actions={<><Button variant="secondary" onClick={suggest}>Suggest from my resume</Button><Button variant="secondary" busy={busy === "ai"} onClick={suggestAi} title="Requires AI to be enabled in Automation Settings">Suggest with AI</Button><Select aria-label="Match mode" value={f.match_mode} onChange={(e) => set("match_mode", e.target.value)} className="w-auto"><option value="weighted">Weighted</option><option value="or">Any keyword (OR)</option><option value="and">All keywords (AND)</option></Select></>}>
           <div className="space-y-3">
+            {f.keywords.filter((k: any) => k.required).length > 5 && (
+              <Notice tone="warn">
+                <b>{f.keywords.filter((k: any) => k.required).length} keywords are marked required.</b> A job is only shown if it contains <b>every</b> required keyword, so this almost always hides every job. Keep “required” for true must-haves (one to three) and leave the rest optional: they raise a job&apos;s score instead.{" "}
+                <button type="button" className="font-medium underline" onClick={() => set("keywords", f.keywords.map((k: any) => ({ ...k, required: false })))}>Make all optional</button>
+              </Notice>)}
             <p className="text-sm text-slate-500">Mark a keyword <b>required</b> only if a job must contain it. <b>Exclude</b> removes jobs that mention it. Everything else just raises the score.</p>
             <div className="space-y-2">
               {f.keywords.map((k: any, i: number) => (
@@ -202,7 +207,9 @@ export default function Preferences() {
       <div className="sticky bottom-0 mt-4 flex flex-wrap items-center gap-3 border-t border-slate-200 bg-slate-50/95 py-3 backdrop-blur">
         <Button busy={busy === "save"} onClick={save}>Save profile</Button>
         {sel !== "new" && <Button variant="secondary" busy={busy === "run"} onClick={runNow}>Save first, then run search now</Button>}
-        {run && <span className="text-sm text-slate-600">{run.status === "running" ? "Searching sources…" : <>Run {run.status}: {run.stats?.new_jobs ?? 0} new, {run.stats?.qualified_new ?? 0} matching{run.error_summary ? ` · ${run.error_summary}` : ""} ({fmtDate(run.completed_at)})</>}</span>}
+        {run && <span className="text-sm text-slate-600">{run.status === "running" ? "Searching sources…" : <>Run {run.status}: {run.stats?.retrieved ?? 0} listings found · {run.stats?.new_jobs ?? 0} new · <b>{run.stats?.qualified_new ?? 0} match your filters</b>
+            {(run.stats?.qualified_new ?? 0) === 0 && (run.stats?.new_jobs ?? 0) > 0 && Object.keys(run.stats?.skipped_reasons || {}).length > 0 && <span className="text-amber-700"> · excluded mainly by: {Object.entries(run.stats.skipped_reasons).sort((a: any, b: any) => b[1] - a[1]).slice(0, 2).map(([k, n]: any) => `${k.replace(/_/g, " ")} (${n})`).join(", ")}. See Discovered Jobs → Excluded only.</span>}
+            {run.error_summary ? ` · ${run.error_summary}` : ""} ({fmtDate(run.completed_at)})</>}</span>}
       </div>
     </>
   );

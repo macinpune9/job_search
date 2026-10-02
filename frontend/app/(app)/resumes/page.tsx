@@ -90,6 +90,7 @@ export default function Resumes() {
             {cur && detail && (
               <Card title={cur.label || cur.filename} actions={<>
                 <Button variant="secondary" onClick={() => openSigned(`/api/resumes/${cur.id}/download-link`)}>Download original</Button>
+                <Button variant="secondary" title="Rebuild the extracted profile from the stored text with the latest parser" onClick={async () => { if (!confirm("Re-parse this resume? This replaces any corrections you made to the extracted profile.")) return; try { await api(`/api/resumes/${cur.id}/reparse`, { method: "POST" }); toast("Re-parsed. Review the extracted profile."); reload(); reloadDetail(); } catch (e: any) { toast(e.message, "err"); } }}>Re-parse</Button>
                 {!cur.is_primary && <Button variant="secondary" onClick={async () => { await api(`/api/resumes/${cur.id}`, { method: "PATCH", body: { is_primary: true } }); reload(); }}>Make primary</Button>}
                 <Button variant="danger" onClick={async () => { if (!confirm("Delete this resume and its generated versions?")) return; try { await api(`/api/resumes/${cur.id}`, { method: "DELETE" }); setSel(null); reload(); } catch (e: any) { toast(e.message, "err"); } }}>Delete</Button></>}>
                 <div className="mb-4 flex gap-2 border-b border-slate-200 text-sm">

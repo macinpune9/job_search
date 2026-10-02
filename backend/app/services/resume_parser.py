@@ -89,6 +89,8 @@ HEADINGS = {
     "achievements": r"(key )?(achievements|awards|accomplishments|honou?rs)",
     "projects": r"projects?",
 }
+# "Testing Tools JIRA with Zephyr" -> "JIRA with Zephyr", "Programming Languages Java" -> "Java" (a short category label + more text)
+_SKILL_LABEL = re.compile(r"^(?:[A-Za-z/&+\-]+\s+){0,2}(?:tools?|languages?|frameworks?|technologies)\s+(?=\S)", re.I)
 BULLET = re.compile(r"^\s*([-•*·▪●◦–]|\d+\.)\s+")
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 PHONE = re.compile(r"(?<!\d)(\+?\d[\d\s().-]{7,}\d)")
@@ -178,8 +180,8 @@ def parse_structured(text: str) -> dict:
         l = _bullet_text(l)
         if ":" in l and len(l.split(":", 1)[0]) < 30:
             l = l.split(":", 1)[1]
-        for p in re.split(r"[,;|•·]", l):
-            p = p.strip(" .")
+        for p in re.split(r"[,;|•·]|\.\s+", l):
+            p = _SKILL_LABEL.sub("", p.strip(" ."), count=1).strip(" .")
             if p and len(p) <= 40 and p.lower() not in {s.lower() for s in skills}:
                 skills.append(p)
     out["skills"] = skills

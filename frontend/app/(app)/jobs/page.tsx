@@ -49,7 +49,14 @@ export default function Jobs() {
         </div>
         <ErrorBox message={error} />
         {loading && !data ? <Loading /> : data && data.items.length === 0 ? (
-          <Empty title="No jobs to show" hint={qualified === "true" ? "Run a search from Job Search Preferences, or switch the filter to see excluded jobs and why." : "Nothing matches these filters."} />
+          qualified === "true" && data.summary?.excluded > 0 && !q && !minScore && !remote && !source ? (
+            <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+              <p className="font-medium">{data.summary.excluded} job{data.summary.excluded === 1 ? " was" : "s were"} found, but none pass your filters.</p>
+              <p>Most common reasons: {data.summary.top_exclusions.map(([k, n]: any) => `${k.replace(/_/g, " ")} (${n} job${n === 1 ? "" : "s"})`).join(", ")}.</p>
+              {data.summary.top_exclusions.some(([k]: any) => k === "missing_required_keyword") && <p>Jobs are hidden when they lack a <b>required</b> keyword. Open <Link className="underline" href="/preferences">Job Search Preferences</Link> and untick “required” on all but your must-haves.</p>}
+              <div className="flex gap-2"><Button variant="secondary" onClick={() => reset(() => setQualified("false"))}>Show excluded jobs and why</Button><Link href="/preferences"><Button variant="secondary">Adjust my filters</Button></Link></div>
+            </div>
+          ) : <Empty title="No jobs to show" hint={qualified === "true" ? "Run a search from Job Search Preferences, or switch the filter to see excluded jobs and why." : "Nothing matches these filters."} />
         ) : data && (
           <>
             <Table>

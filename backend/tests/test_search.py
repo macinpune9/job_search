@@ -253,3 +253,39 @@ def test_score_is_explained():
     names = {f["name"] for f in r.factors}
     assert {"title", "keywords"} <= names and r.score == 100
     assert all("detail" in f for f in r.factors)
+
+
+# ---------------- "found jobs but none shown" diagnostics ----------------
+def test_many_required_keywords_give_one_reason_per_job_and_a_clear_summary(client, auth, web):
+    upload(client, auth)
+    web.greenhouse["acme"] = [gh_job(1, "Software Engineer"), gh_job(2, "Backend Engineer", content="<p>Python only</p>")]
+    kws = [{"term": t, "required": True} for t in ("Selenium", "Tosca", "Zephyr", "Postman")]
+    run = run_now(make_profile(client, auth, keywords=kws)["id"])
+    assert run.stats["new_jobs"] == 2 and run.stats.get("qualified_new", 0) == 0
+    assert run.stats["skipped_reasons"]["missing_required_keyword"] == 2          # counts jobs, not keywords (was 8)
+    r = client.get("/api/jobs", headers=auth).json()
+    assert r["total"] == 0 and r["summary"]["matching"] == 0 and r["summary"]["excluded"] == 2
+    assert r["summary"]["top_exclusions"][0] == ["missing_required_keyword", 2]
+    ex = client.get("/api/jobs", headers=auth, params={"qualified": "false"}).json()["items"][0]["exclusion_reasons"]
+    assert len(ex) == 1 and "4 of 4 required keywords missing: Selenium, Tosca, Zephyr, Postman" in ex[0]["detail"]
+    # showing everything works too
+    assert client.get("/api/jobs", headers=auth, params={"qualified": "all"}).json()["total"] == 2
+    assert client.get("/api/jobs", headers=auth, params={"qualified": "bogus"}).status_code == 422
+
+
+def test_skill_parsing_strips_category_labels_and_splits_sentences():
+    from app.services.resume_parser import parse_structured
+    text = ("Jane Doe\n\nSkills\nTesting Tools JIRA with Zephyr, SoapUI, Manual testing\nCI/CD Tools Jenkins. Gitlab. TeamCity\n"
+            "Programming Languages Java\nDatabase Design, Node.js, Postman\n")
+    assert parse_structured(text)["skills"] == ["JIRA with Zephyr", "SoapUI", "Manual testing", "Jenkins", "Gitlab", "TeamCity", "Java",
+                                                "Database Design", "Node.js", "Postman"]
+
+
+def test_reparse_endpoint_rebuilds_the_profile_from_the_stored_text(client, auth):
+    rid = upload(client, auth).json()["id"]
+    sp = client.get(f"/api/resumes/{rid}", headers=auth).json()["structured_profile"]
+    sp["skills"] = ["Totally wrong"]
+    client.patch(f"/api/resumes/{rid}", headers=auth, json={"structured_profile": sp})
+    r = client.post(f"/api/resumes/{rid}/reparse", headers=auth).json()
+    assert "Python" in r["structured_profile"]["skills"] and "Totally wrong" not in r["structured_profile"]["skills"]
+    assert client.post(f"/api/resumes/{rid}/reparse", headers=register(client, "z@example.com")).status_code == 404

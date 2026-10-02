@@ -72,7 +72,16 @@ def list_jobs(q: str | None = None, qualified: str = Query("true", pattern="(?i)
     for j, m in rows:
         app = appsvc.get_application(db, user.id, j.id)
         items.append(_job_row(j, m, app, sorted({l.source_name for l in j.listings})))
-    return {"items": items, "total": total, "page": page, "page_size": page_size}
+    # context for empty/odd views: how many jobs exist on each side of the filter, and why the excluded ones were excluded
+    base = select(JobMatch).where(JobMatch.id.in_(latest))
+    matching_total = db.scalar(select(func.count()).select_from(base.where(JobMatch.qualified.is_(True)).subquery())) or 0
+    excl_rows = db.scalars(base.where(JobMatch.qualified.is_(False)).limit(500)).all()
+    reasons: dict[str, int] = {}
+    for m in excl_rows:
+        for code in {e.get("code") for e in (m.exclusion_reasons or []) if e.get("code")}:
+            reasons[code] = reasons.get(code, 0) + 1
+    return {"items": items, "total": total, "page": page, "page_size": page_size,
+            "summary": {"matching": matching_total, "excluded": len(excl_rows), "top_exclusions": sorted(reasons.items(), key=lambda kv: -kv[1])[:3]}}
 
 
 def _next_action(job: Job, m: JobMatch, app: Application | None) -> str:

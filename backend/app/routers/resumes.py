@@ -101,6 +101,18 @@ def patch_resume(rid: int, body: ResumePatch, user: User = Depends(current_user)
     return _summary(r, True)
 
 
+@router.post("/resumes/{rid}/reparse")
+def reparse_resume(rid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Re-run the structuring step on the stored text (e.g. after parser improvements). Replaces manual corrections."""
+    r = owned_resume(db, user, rid)
+    if not r.extracted_text:
+        raise HTTPException(422, "This resume has no extracted text")
+    r.structured_profile = resume_parser.parse_structured(r.extracted_text)
+    audit(db, user.id, "resume_reparsed", "resume", r.id)
+    db.commit()
+    return _summary(r, True)
+
+
 @router.delete("/resumes/{rid}", status_code=204)
 def delete_resume(rid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
     r = owned_resume(db, user, rid)
