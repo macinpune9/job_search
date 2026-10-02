@@ -348,6 +348,22 @@ def test_adapter_request_shape_and_prompt_injection_framing():
     assert (a.calls, a.input_tokens, a.output_tokens) == (1, 120, 30)
 
 
+def test_workspace_header_sent_only_when_configured(monkeypatch):
+    s = get_settings()
+    monkeypatch.setattr(s, "anthropic_api_key", "k")
+    monkeypatch.setattr(s, "anthropic_workspace_id", "")
+    assert "anthropic-workspace-id" not in {k.lower() for k in AnthropicLLM().client.default_headers}
+    monkeypatch.setattr(s, "anthropic_workspace_id", "wrkspc_123")
+    assert AnthropicLLM().client.default_headers["anthropic-workspace-id"] == "wrkspc_123"
+
+
+def test_bad_request_surfaces_the_providers_message():
+    req = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+    err = anthropic.BadRequestError("key is not scoped to a workspace", response=httpx2.Response(400, request=req), body=None)
+    with pytest.raises(LLMError, match="not scoped to a workspace"):
+        adapter(StubMessages(error=err)).fit({}, "t", "c", "x")
+
+
 def test_adapter_truncates_long_postings(monkeypatch):
     monkeypatch.setattr(get_settings(), "ai_max_job_chars", 100)
     msgs = StubMessages(ok(FitResult(fit_score=1, matched=[], gaps=[], reasoning="")))

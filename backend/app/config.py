@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     rate_limit_default_per_min: int = 300
     llm_provider: str = "rules"            # "rules" (no AI) or "anthropic"
     anthropic_api_key: str = ""
+    anthropic_workspace_id: str = ""       # only if your key is not scoped to a workspace (sent as anthropic-workspace-id)
     ai_model: str = "claude-opus-5-5"      # e.g. claude-sonnet-5-5 for lower cost
     ai_timeout_seconds: float = 120.0
     ai_max_fit_calls_per_run: int = 40     # job-fit scoring calls per search run (cached results are free)

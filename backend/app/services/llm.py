@@ -144,7 +144,9 @@ class AnthropicLLM(LLMClient):
 
         s = get_settings()
         self._anthropic = anthropic
-        self.client = client or anthropic.Anthropic(api_key=s.anthropic_api_key, max_retries=2, timeout=s.ai_timeout_seconds)
+        headers = {"anthropic-workspace-id": s.anthropic_workspace_id} if s.anthropic_workspace_id else None
+        self.client = client or anthropic.Anthropic(api_key=s.anthropic_api_key, max_retries=2, timeout=s.ai_timeout_seconds,
+                                                    default_headers=headers)
         self.model = s.ai_model
         self.calls = 0
         self.input_tokens = 0
@@ -162,6 +164,8 @@ class AnthropicLLM(LLMClient):
             raise LLMAuthError("AI provider rejected the API key") from e
         except a.PermissionDeniedError as e:
             raise LLMAuthError("AI provider denied access") from e
+        except a.BadRequestError as e:  # a configuration/request problem: the provider's message is safe and useful
+            raise LLMError(f"AI provider rejected the request: {str(getattr(e, 'message', e))[:300]}") from e
         except (a.APIStatusError, a.APIConnectionError) as e:
             raise LLMError(f"AI provider error: {type(e).__name__}") from e
         self.calls += 1

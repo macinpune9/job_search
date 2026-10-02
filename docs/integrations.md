@@ -67,6 +67,8 @@ documented career facts (skills, titles, employers, dates, bullets, education, c
 address or links. Failures (network, refusal, bad output, rate limit) never break a run: the rules-based result is used and the
 run report shows the error count. A rejected API key stops AI calls for that run and appears in the run's error summary.
 
+If the API answers *"This API key is not scoped to a workspace"*, create the key inside a workspace in the Anthropic Console (recommended), or set `ANTHROPIC_WORKSPACE_ID` to that workspace's ID.
+
 Check the live integration once with your own key: `cd backend && python -m scripts.ai_smoke`.
 
 ## Email
