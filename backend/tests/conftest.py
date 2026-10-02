@@ -39,10 +39,45 @@ class FakeWeb:
         self.lever: dict[str, list] = {}
         self.fail: set[str] = set()
         self.calls = 0
+        self.personio: dict[str, dict] = {}      # board -> {"tld": "de"|"com", "feeds": {lang or None: xml}}
+        self.smartrecruiters: dict[str, dict] = {}   # board -> {"list": [...], "detail": {id: {...}}}
+        self.workable: dict[str, dict] = {}
+        self.recruitee: dict[str, dict] = {}
+        self.adzuna_pages: list[list] = []
+        self.adzuna_requests: list[dict] = []
+        self.requests: list[httpx.Request] = []
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.calls += 1
+        self.requests.append(request)
         host, path = request.url.host, request.url.path
+        if host.endswith(".jobs.personio.de") or host.endswith(".jobs.personio.com"):
+            board, tld = host.split(".")[0], host.rsplit(".", 1)[1]
+            cfg = self.personio.get(board)
+            if not cfg or cfg["tld"] != tld:
+                return httpx.Response(404)
+            xml = cfg["feeds"].get(request.url.params.get("language"))
+            return httpx.Response(200, content=xml if xml is not None else cfg["feeds"][None], headers={"content-type": "text/xml"})
+        if host == "api.smartrecruiters.com":
+            parts = path.strip("/").split("/")
+            cfg = self.smartrecruiters.get(parts[2]) if len(parts) > 2 else None
+            if not cfg:
+                return httpx.Response(404)
+            if len(parts) == 4:
+                off, lim = int(request.url.params.get("offset", 0)), int(request.url.params.get("limit", 100))
+                return httpx.Response(200, json={"offset": off, "limit": lim, "totalFound": len(cfg["list"]), "content": cfg["list"][off:off + lim]})
+            return httpx.Response(200, json=cfg["detail"][parts[4]]) if parts[4] in cfg["detail"] else httpx.Response(404)
+        if host == "apply.workable.com":
+            cfg = self.workable.get(path.rsplit("/", 1)[-1])
+            return httpx.Response(200, json=cfg) if cfg else httpx.Response(404, text="Not found")
+        if host.endswith(".recruitee.com"):
+            cfg = self.recruitee.get(host.split(".")[0])
+            return httpx.Response(200, json=cfg) if cfg else httpx.Response(404, json={"error": "not found"})
+        if host == "api.adzuna.com":
+            self.adzuna_requests.append({"path": path, **dict(request.url.params)})
+            page = int(path.rsplit("/", 1)[-1])
+            res = self.adzuna_pages[page - 1] if page <= len(self.adzuna_pages) else []
+            return httpx.Response(200, json={"results": res, "count": sum(len(p) for p in self.adzuna_pages)})
         if host == "boards-api.greenhouse.io":
             board = path.split("/")[3]
             if f"greenhouse:{board}" in self.fail:

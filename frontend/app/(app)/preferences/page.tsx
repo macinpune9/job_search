@@ -10,7 +10,7 @@ const csv = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
 
 const blank = () => ({
   profile_name: "My search", keywords: [] as any[], match_mode: "weighted", exclusions: {} as any, employment_types: [] as string[],
-  role_preferences: {} as any, salary_preferences: { currency: "USD", period: "year", basis: "gross" } as any, location_preferences: {} as any,
+  role_preferences: {} as any, salary_preferences: { currency: "CHF", period: "year", basis: "gross" } as any, location_preferences: {} as any,
   remote_preferences: [] as string[], other_filters: {} as any, sources: [] as any[], resume_id: null as number | null,
   date_lookback_days: 30, unknown_date_policy: "include", min_match_score: 40, overlap_hours: 48, active: true,
 });
@@ -18,6 +18,7 @@ const blank = () => ({
 export default function Preferences() {
   const { data: list, reload: reloadList, loading } = useApi<any[]>("/api/search-profiles");
   const { data: resumes } = useApi<any[]>("/api/resumes");
+  const { data: sourceList } = useApi<any[]>("/api/sources");
   const [sel, setSel] = useState<number | "new" | null>(null);
   const [f, setF] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -114,12 +115,13 @@ export default function Preferences() {
         </Card>
         <Card title="Job sources">
           <div className="space-y-3">
-            <Notice>Only the sources you add here are searched. Enter a company&apos;s public job-board name (for example Greenhouse board “gitlab”, Lever site “spotify”, Ashby board “ramp”).</Notice>
+            <Notice>Only the sources you add here are searched. Pick a source, then type what its box asks for. LinkedIn, Indeed and jobs.ch cannot be searched automatically (no permitted access); add jobs from them with <b>Add job manually</b> on Discovered Jobs.</Notice>
+            {(() => { const s = (sourceList || []).find((x: any) => x.name === src.source); return s ? <p className="text-xs text-slate-500">{s.board_hint}.{s.requires_credentials && !s.configured ? <span className="text-amber-700"> This source needs a free API key on the server: {s.credentials_help}.</span> : null}</p> : null; })()}
             <div className="flex flex-wrap gap-1">{f.sources.map((s: any, i: number) => <Chip key={i} onRemove={() => set("sources", f.sources.filter((_: any, j: number) => j !== i))}>{s.source}:{s.board}</Chip>)}{f.sources.length === 0 && <span className="text-sm text-amber-700">No sources yet; a run will fail until you add one.</span>}</div>
             <div className="flex gap-2">
-              <Select aria-label="Source type" value={src.source} onChange={(e) => setSrc({ ...src, source: e.target.value })} className="w-36"><option value="greenhouse">Greenhouse</option><option value="lever">Lever</option><option value="ashby">Ashby</option></Select>
-              <Input aria-label="Board name" placeholder="board name" value={src.board} onChange={(e) => setSrc({ ...src, board: e.target.value })} />
-              <Button variant="secondary" onClick={() => { if (/^[A-Za-z0-9._-]+$/.test(src.board)) { set("sources", [...f.sources, src]); setSrc({ ...src, board: "" }); } else toast("Board names use letters, digits, . _ -", "err"); }}>Add</Button>
+              <Select aria-label="Source type" value={src.source} onChange={(e) => setSrc({ ...src, source: e.target.value })} className="w-56">{(sourceList || [{ name: "greenhouse", display_name: "Greenhouse" }]).map((s: any) => <option key={s.name} value={s.name}>{s.display_name.split(" (")[0]}{s.requires_credentials && !s.configured ? " (needs key)" : ""}</option>)}</Select>
+              <Input aria-label="Board or search" placeholder={(sourceList || []).find((s: any) => s.name === src.source)?.board_example || "board name"} value={src.board} onChange={(e) => setSrc({ ...src, board: e.target.value })} />
+              <Button variant="secondary" onClick={() => { if (src.board.trim().length > 1) { set("sources", [...f.sources, { ...src, board: src.board.trim() }]); setSrc({ ...src, board: "" }); } else toast("Enter a board name or search first", "err"); }}>Add</Button>
             </div>
           </div>
         </Card>

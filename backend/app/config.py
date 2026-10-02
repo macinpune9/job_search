@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     rate_limit_auth_per_min: int = 10
     rate_limit_default_per_min: int = 300
     llm_provider: str = "rules"            # "rules" (no AI) or "anthropic"
+    adzuna_app_id: str = ""                # free key from developer.adzuna.com (covers Switzerland); enables the Adzuna source
+    adzuna_app_key: str = ""
     anthropic_api_key: str = ""
     anthropic_workspace_id: str = ""       # only if your key is not scoped to a workspace (sent as anthropic-workspace-id)
     ai_model: str = "claude-opus-5-5"      # e.g. claude-sonnet-5-5 for lower cost

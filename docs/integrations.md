@@ -15,6 +15,30 @@ Verified live on 2026-10-02: Greenhouse `gitlab`/`anthropic`, Lever `spotify`, A
 (salary, workplace type) was only checked for shape, not exhaustively. Company names for Lever/Ashby default to the board
 name because those APIs don't return one.
 
+## Switzerland / DACH sources
+| Source | Kind | `board` value | Credentials |
+|---|---|---|---|
+| Personio | company feed (XML, per language; falls back en/de/fr when the default feed has no text) | subdomain, e.g. `muster` for `muster.jobs.personio.de` | none |
+| SmartRecruiters | company feed (JSON; one extra request per posting for its text, first 120 per run) | company id in its SmartRecruiters URL | none |
+| Workable | company feed (JSON) | account name, `apply.workable.com/<name>` | none |
+| Recruitee | company feed (JSON, includes salary when published) | subdomain, `<name>.recruitee.com` | none |
+| Adzuna | **search aggregator** covering Switzerland | `what\|where\|country`, e.g. `python developer\|Zürich` (country defaults to `ch`) | `ADZUNA_APP_ID`, `ADZUNA_APP_KEY` (free) |
+
+All four company feeds were verified against live public boards (Personio, SmartRecruiters, Workable `huggingface`, Recruitee `bunq`).
+Adzuna was tested with a mocked API only (no key was available); its descriptions are short snippets and its dates are
+aggregator dates, so the posted-age window is applied by Adzuna (`max_days_old`) and the date is not treated as an original
+publication date. A search is never a complete listing, so Adzuna never triggers closed-listing detection. Salaries Adzuna
+marks as predicted are ignored; stated ones are CHF per year (gross).
+
+### LinkedIn, Indeed, jobs.ch: why they are not connectors
+- **LinkedIn:** no public job-search API (its job APIs are partner-only); its user agreement forbids automated collection.
+- **Indeed:** retired its public Publisher API; what remains is partner-approval only; automated collection violates its terms.
+- **jobs.ch:** no public API found, and its `robots.txt` disallows automated access to `/api/` and job detail pages.
+Building scrapers would break your own "respect site terms" rule and risk your accounts, so there are none. Instead use
+**Discovered Jobs -> Add job manually**: you paste the text of a posting you found there (the link is stored, never fetched).
+It is matched against your first active search profile, scored (and AI-scored if enabled), shown even if below your minimum, and
+can be tailored and tracked like any job. If one of these sites later offers a permitted API or feed, add it as a connector.
+
 ## Adding a connector
 1. Subclass `app.connectors.base.Connector`; set `name`, `display_name`, `compliance_note`, `requires_credentials`.
 2. Implement `fetch(board, since=None) -> FetchResult(listings, complete, cursor)` returning `RawListing`s.

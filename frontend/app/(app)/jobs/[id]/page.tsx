@@ -32,6 +32,8 @@ export default function JobDetail() {
           ? <Link href={`/history/${j.application.id}`}><Button>Open application</Button></Link>
           : <><Button variant="secondary" busy={busy} disabled={j.status !== "open"} onClick={() => prepare(true)}>Prepare with cover letter</Button><Button busy={busy} disabled={j.status !== "open"} onClick={() => prepare(false)}>Prepare application</Button></>} />
       {j.status !== "open" && <div className="mb-4"><Notice tone="warn">This listing is no longer open at its source.</Notice></div>}
+      {j.listings.some((l: any) => l.source_metadata?.description_truncated) && <div className="mb-4"><Notice tone="warn">This source only provides a short snippet of the description, so matching and resume tailoring have less to work with. Open the original listing, copy the full text, and use <b>Add job manually</b> if you want a full match.</Notice></div>}
+      {j.listings.some((l: any) => l.source_metadata?.imported_by_user) && <div className="mb-4"><Notice>You added this job manually. It is shown even if it would normally be filtered out; the reasons are listed below.</Notice></div>}
       {j.needs_dedup_review && <div className="mb-4"><Notice tone="warn">Possible duplicate of job #{j.possible_duplicate_of}: same company/title/location but a different description. Not merged automatically.</Notice></div>}
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">

@@ -1,7 +1,9 @@
 from collections import Counter
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from pydantic import BaseModel, Field, field_validator
+import re
+
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -29,7 +31,7 @@ class Keyword(BaseModel):
 
 class SourceRef(BaseModel):
     source: str
-    board: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9._-]+$")
+    board: str = Field(min_length=1, max_length=150)
 
     @field_validator("source")
     @classmethod
@@ -37,6 +39,14 @@ class SourceRef(BaseModel):
         if v not in connectors.REGISTRY:
             raise ValueError(f"Unknown source. Available: {', '.join(connectors.REGISTRY)}")
         return v
+
+    @model_validator(mode="after")
+    def board_ok(self):
+        cls_ = connectors.REGISTRY[self.source]
+        if not re.fullmatch(cls_.board_pattern, self.board.strip()):
+            raise ValueError(f"Invalid board for {self.source}: expected {cls_.board_hint}")
+        self.board = self.board.strip()
+        return self
 
 
 class ProfileIn(BaseModel):
@@ -258,9 +268,13 @@ def sources(user: User = Depends(current_user), db: Session = Depends(get_db)):
     out = []
     for name, cls in connectors.REGISTRY.items():
         hs = [h for k, h in health.items() if k.startswith(name + ":")]
+        needs = cls.requires_credentials and not cls.configured()
         out.append({"name": name, "display_name": cls.display_name, "requires_credentials": cls.requires_credentials,
+                    "configured": not needs, "credentials_help": cls.credentials_help, "board_hint": cls.board_hint,
+                    "board_example": cls.board_example, "is_search": cls.is_search,
                     "compliance_note": cls.compliance_note, "configured_boards": mine[name],
                     "last_success_at": max((h.last_success_at for h in hs if h.last_success_at), default=None),
                     "last_error": next((h.last_error for h in hs if h.last_error), None),
-                    "status": ("unavailable" if hs and all(h.consecutive_failures for h in hs) else "ok" if hs else "unused")})
+                    "status": ("needs_configuration" if needs else "unavailable" if hs and all(h.consecutive_failures for h in hs)
+                               else "ok" if hs else "unused")})
     return out

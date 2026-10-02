@@ -77,7 +77,7 @@ def run_search(db: Session, profile_id: int, trigger: str = "manual", run_id: in
         try:
             conn = connectors.make_connector(name)
             since = (cur.last_successful_run_at - timedelta(hours=sp.overlap_hours)) if cur and cur.last_successful_run_at else None
-            result = conn.fetch(board, since=since)
+            result = conn.fetch(board, since=since, lookback_days=sp.date_lookback_days)
         except ConnectorUnavailable as e:
             src_stats[key] = {"status": "unavailable", "error": str(e)}
             errors.append(f"{key}: {e}")

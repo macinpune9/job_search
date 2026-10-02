@@ -11,7 +11,7 @@ consequential ones.
 
 | It does | It will not |
 |---|---|
-| Search public job boards (Greenhouse, Lever, Ashby) and de-duplicate results across runs | Scrape sites that forbid it, or bypass logins/CAPTCHAs |
+| Search public company career feeds (Greenhouse, Lever, Ashby, Personio, SmartRecruiters, Workable, Recruitee) and Adzuna Switzerland, de-duplicating across runs; import jobs you paste from LinkedIn/Indeed/jobs.ch | Scrape sites that forbid it, or bypass logins/CAPTCHAs |
 | Score each job against your keywords and preferences, and show *why* it matched or was excluded | Hide a job without giving a reason |
 | Produce a job-specific ATS-friendly resume (DOCX/PDF) from **your own** resume facts, reworded by AI if you opt in | Add a skill, title, degree, employer, date or metric you don't already have |
 | Judge job fit by meaning (AI, opt-in) on top of the rules-based filters | Send your name, email or phone to the AI, or use AI at all unless you turn it on |
@@ -98,8 +98,11 @@ cd frontend && cp .env.example .env.local && npm install && npm run dev   # http
 > **Windows:** if PowerShell refuses to activate the venv ("running scripts is disabled"), skip activation and prefix
 > commands with the venv's Python, e.g. `.venv\Scripts\python -m pytest -q`.
 
-Then register, upload a resume, add a source in **Job Search Preferences** (Greenhouse board `gitlab`, Lever site `spotify`,
-Ashby board `ramp`; no credentials needed), and run a search.
+Then register, upload a resume, add a source in **Job Search Preferences** and run a search. Sources (no credentials unless
+noted): Greenhouse `gitlab`, Lever `spotify`, Ashby `ramp`, and for Swiss/DACH employers Personio, SmartRecruiters, Workable
+`huggingface`, Recruitee `bunq`, plus Adzuna Switzerland search (free key). **LinkedIn, Indeed and jobs.ch are deliberately not
+searched automatically** (no permitted access); paste postings from them with **Add job manually**. See
+[Switzerland / DACH sources](docs/integrations.md#switzerland--dach-sources).
 
 **Docker:** `cp .env.example .env && docker compose up --build` starts Postgres, Redis, API, scheduler and web.
 
@@ -110,7 +113,7 @@ derives the file-encryption key), `DATABASE_URL`, `SANDBOX_MODE`, optional `GOOG
 
 ## Tests and CI
 ```bash
-cd backend && pytest -q                      # 117 tests
+cd backend && pytest -q                      # 141 tests
 cd frontend && npm run lint && npm run build
 ```
 GitHub Actions runs four jobs on every push: backend tests (SQLite), frontend type-check + build, the same backend tests
@@ -126,11 +129,12 @@ connectors were also checked once against the live Greenhouse, Lever and Ashby A
 1. **No real application submission.** The only submitter is a labelled **sandbox test double**. Employer-authorized APIs and
    browser form-filling are not implemented; everything else becomes a manual-apply package.
 2. **AI is optional and only partly proven.** The AI paths are tested with a scripted fake model and a stub SDK client
-   (117 tests), **not against the live Claude API** (no key was available). Run `python -m scripts.ai_smoke` with your key to check
+   (141 tests), **not against the live Claude API** (no key was available). Run `python -m scripts.ai_smoke` with your key to check
    it. The strict fact-check can reject legitimate rewrites (it flags reworded text that uses words from the job posting that
    your resume lacks), in which case you get the rules-based resume. The resume parser itself is still heuristic and you review it.
 3. **Not exercised:** Google sign-in against real Google (mock only), Celery/Redis workers, and any automated frontend/browser tests.
-4. **Three sources** (public ATS board APIs), with board names entered by you. No generic career-page crawler.
+4. **Sources:** seven public career-feed APIs (board names entered by you) plus Adzuna (needs a free key; mocked tests only).
+   No generic career-page crawler, and no LinkedIn/Indeed/jobs.ch connectors (not permitted; use manual import).
 5. Not built: other OAuth providers, malware scanning, real email sending, the data-retention purge job, automated backups,
    a Redis-backed rate limiter, httpOnly-cookie sessions (the token is in `localStorage`), and a UI to resolve flagged
    possible duplicates.

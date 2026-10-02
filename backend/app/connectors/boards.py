@@ -27,7 +27,7 @@ class GreenhouseConnector(Connector):
     display_name = "Greenhouse (public job boards)"
     compliance_note = "Uses the public Job Board API. The `board` is the company's board token."
 
-    def fetch(self, board, since=None):
+    def fetch(self, board, since=None, lookback_days=None):
         data = self.get_json(f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs", {"content": "true"})
         out = []
         for j in data.get("jobs", []):
@@ -54,7 +54,7 @@ class LeverConnector(Connector):
     display_name = "Lever (public postings)"
     compliance_note = "Uses the public Postings API. The `board` is the company's Lever site name."
 
-    def fetch(self, board, since=None):
+    def fetch(self, board, since=None, lookback_days=None):
         out, skip, page = [], 0, 100
         while True:
             data = self.get_json(f"https://api.lever.co/v0/postings/{board}",
@@ -94,7 +94,7 @@ class AshbyConnector(Connector):
     display_name = "Ashby (public job boards)"
     compliance_note = "Uses the public Job Posting API. The `board` is the Ashby job-board name."
 
-    def fetch(self, board, since=None):
+    def fetch(self, board, since=None, lookback_days=None):
         data = self.get_json(f"https://api.ashbyhq.com/posting-api/job-board/{board}",
                              {"includeCompensation": "true"})
         out = []

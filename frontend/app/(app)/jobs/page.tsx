@@ -1,8 +1,10 @@
 "use client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import ImportJob from "@/components/ImportJob";
 import { useState } from "react";
 import { fmtDay, useApi } from "@/lib/api";
-import { Card, Empty, ErrorBox, Input, Loading, PageHeader, Pagination, ScoreBadge, Select, StatusBadge, Table, Td, Th } from "@/components/ui";
+import { Button, Card, Empty, ErrorBox, Input, Loading, PageHeader, Pagination, ScoreBadge, Select, StatusBadge, Table, Td, Th } from "@/components/ui";
 
 export default function Jobs() {
   const [q, setQ] = useState("");
@@ -12,9 +14,12 @@ export default function Jobs() {
   const [source, setSource] = useState("");
   const [sort, setSort] = useState("score");
   const [page, setPage] = useState(1);
+  const [showImport, setShowImport] = useState(false);
+  const router = useRouter();
+  const { data: sources } = useApi<any[]>("/api/sources");
   const params = new URLSearchParams({ page: String(page), page_size: "25", sort });
   if (q) params.set("q", q);
-  if (qualified !== "all") params.set("qualified", qualified);
+  params.set("qualified", qualified);
   if (minScore) params.set("min_score", minScore);
   if (remote) params.set("remote", remote);
   if (source) params.set("source", source);
@@ -22,7 +27,9 @@ export default function Jobs() {
   const reset = (f: () => void) => { f(); setPage(1); };
   return (
     <>
-      <PageHeader title="Discovered Jobs" subtitle="Every job found by your searches, with the reason it matched or was excluded." />
+      <PageHeader title="Discovered Jobs" subtitle="Every job found by your searches, with the reason it matched or was excluded."
+        actions={<Button variant="secondary" onClick={() => setShowImport(!showImport)}>Add job manually</Button>} />
+      {showImport && <ImportJob onCancel={() => setShowImport(false)} onDone={(id) => router.push(`/jobs/${id}`)} />}
       <Card>
         <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
           <Input aria-label="Search" placeholder="Search title or company" value={q} onChange={(e) => reset(() => setQ(e.target.value))} className="lg:col-span-2" />
@@ -34,7 +41,7 @@ export default function Jobs() {
             <option value="">Any work mode</option><option value="remote">Remote</option><option value="hybrid">Hybrid</option><option value="onsite">On-site</option>
           </Select>
           <Select aria-label="Source" value={source} onChange={(e) => reset(() => setSource(e.target.value))}>
-            <option value="">Any source</option><option value="greenhouse">Greenhouse</option><option value="lever">Lever</option><option value="ashby">Ashby</option>
+            <option value="">Any source</option>{(sources || []).map((s) => <option key={s.name} value={s.name}>{s.display_name.split(" (")[0]}</option>)}<option value="manual">Added manually</option>
           </Select>
         </div>
         <div className="mb-3 flex items-center gap-2 text-sm text-slate-500">Sort by

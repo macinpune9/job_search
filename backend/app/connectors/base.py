@@ -61,6 +61,15 @@ class Connector(ABC):
     display_name: str = ""
     requires_credentials: bool = False
     compliance_note: str = ""
+    board_hint: str = "the company's board name"       # what the user types in the "board" box
+    board_example: str = ""
+    board_pattern: str = r"^[A-Za-z0-9._-]{1,100}$"    # validated server-side (keeps URLs/paths safe)
+    credentials_help: str = ""                          # which settings/env vars enable this source
+    is_search: bool = False                             # True: a keyword search (not a full board listing) -> never "complete"
+
+    @classmethod
+    def configured(cls) -> bool:
+        return True
 
     def __init__(self, client: httpx.Client | None = None):
         s = get_settings()
@@ -68,9 +77,19 @@ class Connector(ABC):
             timeout=s.http_timeout_seconds, headers={"User-Agent": s.user_agent}, follow_redirects=True)
 
     @abstractmethod
-    def fetch(self, board: str, since: datetime | None = None) -> FetchResult: ...
+    def fetch(self, board: str, since: datetime | None = None, lookback_days: int | None = None) -> FetchResult: ...
 
     def get_json(self, url: str, params: dict | None = None, retries: int = 3) -> Any:
+        r = self._get(url, params, retries)
+        try:
+            return r.json()
+        except ValueError:
+            raise ConnectorError("invalid JSON from source")
+
+    def get_text(self, url: str, params: dict | None = None, retries: int = 3) -> bytes:
+        return self._get(url, params, retries).content
+
+    def _get(self, url: str, params: dict | None = None, retries: int = 3) -> httpx.Response:
         delay = get_settings().retry_base_seconds
         last: Exception | None = None
         for attempt in range(retries):
@@ -80,10 +99,7 @@ class Connector(ABC):
                 last = ConnectorError(f"network error: {type(e).__name__}", transient=True)
             else:
                 if r.status_code == 200:
-                    try:
-                        return r.json()
-                    except ValueError:
-                        raise ConnectorError("invalid JSON from source")
+                    return r
                 if r.status_code in (401, 403):
                     raise ConnectorUnavailable(f"access denied ({r.status_code})")
                 if r.status_code == 404:
