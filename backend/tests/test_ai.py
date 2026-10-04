@@ -9,8 +9,8 @@ from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Application
 from app.services import llm as llmmod
-from app.services.llm import (AnthropicLLM, Claim, FitResult, KeywordIdeas, LLMAuthError, LLMError, Tailored, TailoredRole,
-                              Verdict, facts_for_ai)
+from app.services.llm import (AnthropicLLM, Claim, FitResult, InsightRole, Insights, InsightSkill, KeywordIdeas, LLMAuthError, LLMError,
+                              Tailored, TailoredRole, Verdict, facts_for_ai)
 from .conftest import gh_job, make_profile, run_now, upload
 
 SRC_BULLETS_0 = ["Built Python services handling 2 million requests per day", "Maintained PostgreSQL databases and wrote SQL reports",
@@ -30,6 +30,16 @@ class FakeLLM(llmmod.LLMClient):
         self.tailor_script = []   # list of Tailored | Exception, consumed in order (last one repeats)
         self.verify_script = []   # list of Verdict | Exception
         self.keywords = KeywordIdeas(target_titles=["Platform Engineer"], alternative_titles=["SRE"], skills=["Terraform"], related_terms=["observability"])
+        self.insights_calls, self.insights_error, self.linkedin_seen = 0, None, []
+        self.insights_result = Insights(
+            roles=[InsightRole(title="Backend Software Engineer", reason="your recent role"), InsightRole(title="Data Engineer", reason="adjacent")],
+            technical_skills=[InsightSkill(name="Python", evidence="Built Python services handling 2 million requests per day", proficiency="Advanced"),
+                              InsightSkill(name="Kubernetes", evidence="Led the Kubernetes migration of 40 services", proficiency="Expert")],   # invented
+            behavioural_skills=[InsightSkill(name="Mentoring", evidence="Mentored three junior engineers", proficiency="Intermediate")],
+            tools=[InsightSkill(name="PostgreSQL", evidence="Maintained PostgreSQL databases and wrote SQL reports", proficiency="Advanced"),
+                   InsightSkill(name="Docker", evidence="Wrote Docker images for deployment", proficiency="Intermediate"),
+                   InsightSkill(name="Terraform", evidence="Wrote Docker images for deployment", proficiency="Expert")])   # quote does not mention it
+        self.structure_texts, self.structure_error, self.structure_result = [], None, None
 
     def fit(self, facts, job_title, company, job_text):
         self.facts_seen.append(facts)
@@ -55,6 +65,20 @@ class FakeLLM(llmmod.LLMClient):
 
     def suggest_keywords(self, facts):
         return self.keywords
+
+    def insights(self, facts, linkedin=None):
+        self.insights_calls += 1
+        self.facts_seen.append(facts)
+        self.linkedin_seen.append(linkedin)
+        if self.insights_error:
+            raise self.insights_error
+        return self.insights_result
+
+    def structure_cv(self, cv_text):
+        self.structure_texts.append(cv_text)
+        if self.structure_error:
+            raise self.structure_error
+        return self.structure_result
 
 
 def tailored(b0=None, b1=None, skills=None, summary="Backend engineer who builds reliable data services."):
@@ -300,19 +324,20 @@ def test_scheduled_run_tailors_with_ai_within_budget(client, auth, web, fake, mo
 
 
 # ---------------- keyword ideas ----------------
-def test_ai_keyword_suggestions(client, auth, fake):
+def test_ai_keyword_suggestions_are_curated_and_evidence_backed(client, auth, fake):
     rid = upload(client, auth).json()["id"]
     assert client.get(f"/api/keywords/suggest?resume_id={rid}&ai=true", headers=auth).status_code == 422   # not opted in
     enable_ai(client, auth)
-    ks = client.get(f"/api/keywords/suggest?resume_id={rid}&ai=true", headers=auth).json()["keywords"]
-    ai_terms = {k["term"]: k for k in ks if k.get("source") == "ai"}
-    assert {"Platform Engineer", "SRE", "Terraform", "observability"} == set(ai_terms)
-    assert all(not k["required"] for k in ks)             # nothing is auto-required
-    plain = client.get(f"/api/keywords/suggest?resume_id={rid}", headers=auth).json()["keywords"]
-    assert not any(k.get("source") == "ai" for k in plain)
-    fake.suggest_keywords = lambda facts: (_ for _ in ()).throw(LLMError("down"))
-    assert client.get(f"/api/keywords/suggest?resume_id={rid}&ai=true", headers=auth).status_code == 502
-
+    r = client.get(f"/api/keywords/suggest?resume_id={rid}&ai=true", headers=auth).json()
+    terms = {k["term"]: k for k in r["keywords"]}
+    assert "Backend Software Engineer" in terms and "Python" in terms and "Mentoring" in terms and "PostgreSQL" in terms
+    assert "Kubernetes" not in terms and "Terraform" not in terms           # quotes missing from the CV -> dropped
+    assert all(not k["required"] for k in r["keywords"]) and len(r["keywords"]) <= 16 and r["snapshot"]["source"] == "ai"
+    plain = client.get(f"/api/keywords/suggest?resume_id={rid}", headers=auth).json()
+    assert plain["snapshot"]["source"] == "rules" and len(plain["keywords"]) <= 16
+    fake.insights_error = LLMError("down")
+    fb = client.get(f"/api/keywords/suggest?resume_id={rid}&ai=true&refresh=true", headers=auth)   # falls back, never fails
+    assert fb.status_code == 200
 
 # ---------------- Claude adapter (stub SDK client, no network) ----------------
 class StubMessages:

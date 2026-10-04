@@ -100,6 +100,7 @@ class Resume(Base):
     processing_error: Mapped[str | None] = mapped_column(String(500))
     content_hash: Mapped[str] = mapped_column(String(64))
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
+    insights: Mapped[dict | None] = mapped_column(JSON)  # cached AI career snapshot {key, data}
     uploaded_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     versions: Mapped[list["ResumeVersion"]] = relationship(back_populates="resume", cascade="all, delete-orphan")
     __table_args__ = (UniqueConstraint("user_id", "content_hash", name="uq_resume_user_hash"),)
@@ -156,6 +157,8 @@ class SearchProfile(Base):
     date_lookback_days: Mapped[int] = mapped_column(Integer, default=30)
     unknown_date_policy: Mapped[str] = mapped_column(String(16), default="include")  # include|exclude
     min_match_score: Mapped[float] = mapped_column(Float, default=40.0)
+    # flexible: preferences (employment type, work mode, location, ...) only lower the score; strict: they exclude jobs
+    strictness: Mapped[str] = mapped_column(String(12), default="flexible", server_default="flexible")
     overlap_hours: Mapped[int] = mapped_column(Integer, default=48)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)

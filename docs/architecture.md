@@ -66,6 +66,18 @@ then dead-letters. One failing source never aborts the others.
 (reserved; behaves as prepare); `auto_submit_authorized` requires an explicit consent timestamp (revoked on leaving the mode),
 is blocked while paused, and can only act through registered submitters.
 
+## Career snapshot, CV parsing and flexible matching
+- `resume_parser.py`: section headings (incl. interests/languages/personal so their lines never leak into Skills), labelled `Company/Role/Period`
+  project blocks, and a fallback that builds entries from any date range when a CV has no Experience heading. `skillvocab.is_plausible_skill`
+  drops school, places, hobbies, spoken languages, contact details, dates and sentences.
+- `insights.py`: evidence-ranked picks (3 roles / 5 technical / 3 behavioural / 5 tools). Proficiency is *estimated* from years of use, recency and
+  number of mentions. Roles come from job titles, else titles in the profile summary, else the strongest skill cluster (labelled as inferred).
+  AI results are accepted only with a verbatim quote from the CV/LinkedIn text; unsupported items are dropped and the list is topped up from rules.
+- `ai_structure.py`: optional AI reading of odd layouts; PII redacted before sending; every role, bullet, skill, degree and certificate must be
+  supported by the CV text; identity fields always come from the rule parser.
+- `matching.py`: `strictness` = `flexible` (default) or `strict`. Flexible turns employment type / work mode / location mismatches into lower
+  scores; criteria a job does not state are skipped, so the score is the percentage of *stated* criteria met.
+
 ## AI layer (optional)
 `services/llm.py` (provider interface + Claude adapter with structured outputs, minimised facts, injection-framed prompts),
 `ai_match.py` (blend AI fit with rules; budget; cache), `ai_resume.py` (tailor -> deterministic validate -> AI audit -> retry ->

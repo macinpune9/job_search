@@ -189,7 +189,7 @@ def _sp(**kw):
     from app.models import SearchProfile
     d = dict(user_id=1, profile_name="x", keywords=[], match_mode="weighted", exclusions={}, employment_types=[], role_preferences={},
              salary_preferences={}, location_preferences={}, remote_preferences=[], date_lookback_days=30, unknown_date_policy="include",
-             min_match_score=0)
+             min_match_score=0, strictness="strict")   # these unit tests cover strict (hard-filter) behaviour; flexible is tested in test_insights.py
     d.update(kw)
     return SearchProfile(**d)
 

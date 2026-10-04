@@ -12,12 +12,13 @@ from datetime import datetime, timedelta
 
 from ..db import utcnow
 from ..models import Job, SearchProfile
+from .skillvocab import is_plausible_skill
 from .textutil import contains_term, norm_company, norm_title, tokens
 
 PERIOD_TO_ANNUAL = {"year": 1, "annual": 1, "yearly": 1, "month": 12, "monthly": 12, "week": 52,
                     "weekly": 52, "day": 260, "daily": 260, "hour": 2080, "hourly": 2080}
 SENIORITY = ["intern", "junior", "associate", "mid", "senior", "staff", "lead", "principal", "manager", "director"]
-WEIGHTS = {"title": 30, "keywords": 35, "skills": 15, "location": 10, "salary": 5, "seniority": 5}
+WEIGHTS = {"title": 30, "keywords": 35, "skills": 15, "location": 10, "salary": 5, "seniority": 5, "employment": 5, "work_mode": 5}
 
 
 @dataclass
@@ -107,25 +108,33 @@ def evaluate(job: Job, sp: SearchProfile, resume_structured: dict | None = None,
         if contains_term(text, ind):
             exclude("excluded_industry", ind)
 
+    strict = (sp.strictness or "flexible") == "strict"   # flexible: preferences only lower the score; strict: they exclude
     active = [k for k in kws if not k.get("excluded")]
     hits = {k["term"]: _term_hit(text, k) for k in active}
     required = [k["term"] for k in active if k.get("required")]
     missing = [t for t in required if not hits[t]]
     if missing:  # one reason per job (not per keyword), so run statistics count jobs
         exclude("missing_required_keyword", f"{len(missing)} of {len(required)} required keywords missing: " + ", ".join(missing))
-    if sp.match_mode == "and" and active and not all(hits.values()):
+    if strict and sp.match_mode == "and" and active and not all(hits.values()):
         exclude("and_mode_missing_keywords", ", ".join(t for t, h in hits.items() if not h))
-    if sp.match_mode == "or" and active and not any(hits.values()):
+    if strict and sp.match_mode == "or" and active and not any(hits.values()):
         exclude("or_mode_no_keyword_found", "none of the keywords appear")
 
+    emp_frac = mode_frac = None
     if sp.employment_types:
-        if job.employment_type and job.employment_type not in sp.employment_types:
-            exclude("employment_type", job.employment_type)
-        elif not job.employment_type:
-            res.factors.append({"name": "employment_type", "kind": "soft", "detail": "unknown on listing; not excluded"})
+        if job.employment_type:
+            emp_ok = job.employment_type in sp.employment_types
+            if not emp_ok and strict:
+                exclude("employment_type", job.employment_type)
+            emp_frac = 1.0 if emp_ok else 0.0
+        else:
+            res.factors.append({"name": "employment_type", "kind": "soft", "detail": "not stated on the listing; not counted against it"})
 
-    if sp.remote_preferences and job.remote_status != "unknown" and job.remote_status not in sp.remote_preferences:
-        exclude("work_mode", f"job is {job.remote_status}")
+    if sp.remote_preferences and job.remote_status != "unknown":
+        mode_ok = job.remote_status in sp.remote_preferences
+        if not mode_ok and strict:
+            exclude("work_mode", f"job is {job.remote_status}")
+        mode_frac = 1.0 if mode_ok else 0.0
 
     window_start = now - timedelta(days=sp.date_lookback_days)
     if job.posted_at and job.posted_at_reliable:
@@ -173,12 +182,16 @@ def evaluate(job: Job, sp: SearchProfile, resume_structured: dict | None = None,
         got = sum(float(k.get("weight", 1)) for k in scored if hits[k["term"]])
         matched = [k["term"] for k in scored if hits[k["term"]]]
         comp["keywords"] = (got / tot, f"{len(matched)}/{len(scored)} keywords found: {', '.join(matched) or 'none'}")
-    skills = (resume_structured or {}).get("skills", [])
+    skills = [s for s in (resume_structured or {}).get("skills", []) if is_plausible_skill(s)]
     if skills:
         found = [s for s in skills if contains_term(text, s)]
         comp["skills"] = (min(1.0, len(found) / min(8, len(skills))), f"{len(found)} of your documented skills appear: {', '.join(found[:8]) or 'none'}")
     if loc_ok is not None:
         comp["location"] = (1.0 if loc_ok else 0.0, f"{job.location or job.remote_status}")
+    if not strict and emp_frac is not None:   # flexible: a mismatch costs score instead of excluding the job
+        comp["employment"] = (emp_frac, f"job is {job.employment_type}; you want {', '.join(sp.employment_types)}")
+    if not strict and mode_frac is not None:
+        comp["work_mode"] = (mode_frac, f"job is {job.remote_status}; you want {', '.join(sp.remote_preferences)}")
     if sal["status"] == "comparable":
         comp["salary"] = (1.0 if sal["ok"] else 0.0, sal["detail"])
     elif sal["status"] == "not_comparable":
@@ -194,6 +207,9 @@ def evaluate(job: Job, sp: SearchProfile, resume_structured: dict | None = None,
         res.factors.append({"name": "experience", "kind": "soft",
                             "detail": f"listing asks ~{need} years, resume documents ~{cy:.1f}"})
 
+    if comp:
+        met = sum(1 for f_, _ in comp.values() if f_ >= 0.5)
+        res.factors.append({"name": "criteria_met", "kind": "summary", "detail": f"{met} of {len(comp)} of your criteria are met (criteria the job does not state are not counted)"})
     total_w = sum(WEIGHTS[k] for k in comp)
     earned = 0.0
     for k, (frac, detail) in comp.items():

@@ -9,7 +9,7 @@ from sqlalchemy import text
 from .config import get_settings
 from .db import SessionLocal
 from .ratelimit import RateLimitMiddleware
-from .routers import applications, auth, jobs, misc, oauth, resumes, searches, users
+from .routers import applications, auth, insights, jobs, misc, oauth, resumes, searches, users
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 # Never log request bodies/headers; uvicorn access logs include paths only.
@@ -55,7 +55,7 @@ async def unhandled(_: Request, exc: Exception):
     return _err(500, "internal_error", "Something went wrong")
 
 
-for r in (auth.router, oauth.router, users.router, resumes.router, searches.router, jobs.router, applications.router, misc.router):
+for r in (auth.router, oauth.router, insights.router, users.router, resumes.router, searches.router, jobs.router, applications.router, misc.router):
     app.include_router(r)
 
 

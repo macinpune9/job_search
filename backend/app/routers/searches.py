@@ -11,7 +11,8 @@ from .. import connectors
 from ..db import SessionLocal, get_db, utcnow
 from ..deps import audit, current_user
 from ..models import (ConnectorHealth, Job, Resume, SearchProfile, SearchRun, SourceCursor, User, as_dict)
-from ..services import engine, keywords, llm, matching
+from ..services import engine, insights, keywords, llm, matching
+from .insights import snapshot_for
 from ..services import scheduler as sched
 
 router = APIRouter(prefix="/api", tags=["search"])
@@ -65,6 +66,7 @@ class ProfileIn(BaseModel):
     date_lookback_days: int = Field(30, ge=1, le=365)
     unknown_date_policy: str = Field("include", pattern="^(include|exclude)$")
     min_match_score: float = Field(40, ge=0, le=100)
+    strictness: str = Field("flexible", pattern="^(flexible|strict)$")
     overlap_hours: int = Field(48, ge=0, le=24 * 14)
     active: bool = True
 
@@ -157,24 +159,11 @@ def suggest_keywords(resume_id: int, ai: bool = False, user: User = Depends(curr
         raise HTTPException(404, "Resume not found")
     if not r.structured_profile:
         raise HTTPException(422, "Resume has not been parsed")
-    out = keywords.suggest(r.structured_profile)
-    if ai:
-        client = llm.llm_for_user(db, user.id)
-        if client is None:
-            raise HTTPException(422, "AI features are off. Enable them in Automation Settings (requires a configured AI provider).")
-        try:
-            ideas = client.suggest_keywords(llm.facts_for_ai(r.structured_profile))
-        except llm.LLMError as e:
-            raise HTTPException(502, f"AI suggestions unavailable: {e}")
-        have = {k["term"].lower() for k in out}
-        for terms, kind, weight in ((ideas.target_titles, "title", 2.0), (ideas.alternative_titles, "title", 1.0),
-                                    (ideas.skills, "skill", 1.0), (ideas.related_terms, "other", 0.5)):
-            for t in terms:
-                t = t.strip()
-                if t and t.lower() not in have and len(t) <= 60:
-                    have.add(t.lower())
-                    out.append({"term": t, "kind": kind, "required": False, "excluded": False, "synonyms": [], "weight": weight, "source": "ai"})
-    return {"keywords": out, "note": "Suggestions are optional. Nothing is required unless you mark it required."}
+    snap = snapshot_for(db, user, r, ai)          # curated: ~3 roles, 5 technical, 3 behavioural, 5 tools (not every word on the CV)
+    conf = insights.selection_to_profile([x["title"] for x in snap["roles"]], [x["name"] for x in snap["technical_skills"]],
+                                         [x["name"] for x in snap["behavioural_skills"]], snap["tools"])
+    return {"keywords": [{**k, "source": snap["source"]} for k in conf["keywords"]], "snapshot": snap,
+            "note": "A short, ranked list. Nothing is required; every keyword only raises a job's score."}
 
 
 class Preview(BaseModel):

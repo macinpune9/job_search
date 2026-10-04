@@ -70,7 +70,8 @@ class Storage:
 
     def _path(self, key: str) -> Path:
         p = (self.root / key).resolve()
-        if not str(p).startswith(str(self.root.resolve())):
+        plain = lambda x: str(x).removeprefix("\\\\?\\")  # noqa: E731 (Windows long paths come back with a \\?\ prefix)
+        if not plain(p).startswith(plain(self.root.resolve())):
             raise ValueError("invalid storage key")
         return p
 

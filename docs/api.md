@@ -15,6 +15,7 @@ until `status != running` (completion also produces a notification + report).
 | Auth | `GET /api/auth/providers` `GET /api/auth/google/login` `GET /api/auth/google/callback` (browser redirects, not JSON) · `POST /api/auth/register` `login` `logout` `verify-email` `request-password-reset` `reset-password` |
 | User | `GET/PATCH/DELETE /api/users/me` · `GET /api/users/me/export` · `GET/PATCH /api/profiles/me` · `POST /api/profiles/linkedin/import` |
 | Resumes | `POST/GET /api/resumes` · `GET/PATCH/DELETE /api/resumes/{id}` · `…/download-link` · `…/versions` · `GET /api/resume-versions/{id}` · `…/download-link?fmt=docx\|pdf` · `POST …/edit` |
+| Career snapshot | `GET /api/resumes/{id}/insights?ai=&refresh=` · `POST /api/insights/apply` (roles, skills, tools -> search profile) · `POST /api/resumes/{id}/reparse?ai=` |
 | Search | `GET/POST /api/search-profiles` · `GET/PATCH/DELETE …/{id}` · `POST …/{id}/run` · `POST …/{id}/keyword-preview` · `GET /api/keywords/suggest?resume_id=` · `GET /api/search-runs[/{id}]` · `GET /api/sources` |
 | Jobs | `GET /api/jobs` (q, qualified, min_score, status, source, remote, sort, page) · `GET /api/jobs/{id}` · `GET …/match` · `POST …/prepare-application` |
 | Applications | `GET /api/applications` · `GET …/export.csv` · `GET/PATCH …/{id}` · `POST …/{id}/approve` · `POST …/{id}/submit` |

@@ -7,6 +7,8 @@ import { Card, Empty, ErrorBox, Loading, PageHeader, Stat, StatusBadge } from "@
 export default function Dashboard() {
   const { data: d, error, loading } = useApi<any>("/api/dashboard");
   const { data: runs } = useApi<any[]>("/api/search-runs?limit=10");
+  const { data: resumes } = useApi<any[]>("/api/resumes");
+  const { data: profiles } = useApi<any[]>("/api/search-profiles");
   if (loading) return <Loading />;
   if (error || !d) return <ErrorBox message={error} />;
   const funnel = [
@@ -17,6 +19,25 @@ export default function Dashboard() {
   return (
     <>
       <PageHeader title="Dashboard" subtitle="Live numbers from your search history." />
+      {(() => {
+        const steps = [
+          { done: (resumes || []).length > 0, label: "Upload your CV", href: "/resumes", hint: "PDF or DOCX" },
+          { done: (profiles || []).some((p) => (p.keywords || []).length > 0), label: "Review your career snapshot", href: "/resumes", hint: "one click fills in your search" },
+          { done: (profiles || []).some((p) => (p.sources || []).length > 0), label: "Choose where to search", href: "/preferences", hint: "company career feeds, Adzuna…" },
+          { done: (runs || []).length > 0, label: "Run your first search", href: "/preferences", hint: "partial matches (40–50%) are shown too" },
+        ];
+        if (!resumes || !profiles || !runs || steps.every((s) => s.done)) return null;
+        return (
+          <div className="mb-6 rounded-xl border border-brand-200 bg-brand-50 p-4">
+            <div className="mb-2 text-sm font-semibold text-slate-800">Getting started: {steps.filter((s) => s.done).length} of {steps.length} done</div>
+            <ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              {steps.map((s, i) => (
+                <li key={i}><Link href={s.href} className={`block rounded-lg border px-3 py-2 text-sm ${s.done ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-white text-slate-800 hover:border-brand-500"}`}>
+                  <span className="font-medium">{s.done ? "✓ " : `${i + 1}. `}{s.label}</span><span className="block text-xs text-slate-500">{s.hint}</span></Link></li>
+              ))}
+            </ol>
+          </div>);
+      })()}
       {nothingYet && (
         <div className="mb-6"><Empty title="No jobs discovered yet" hint="Upload a resume, create a search profile with at least one job source, then run a search."
           action={<div className="flex justify-center gap-2"><Link className="text-brand-600 underline" href="/resumes">Upload resume</Link><Link className="text-brand-600 underline" href="/preferences">Set up search</Link></div>} /></div>

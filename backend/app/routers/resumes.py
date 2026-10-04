@@ -12,6 +12,8 @@ from ..deps import audit, current_user
 from ..models import Application, Job, Resume, ResumeVersion, User, as_dict
 from ..security import decode_token, signed_download_token, storage
 from ..services import resume_gen, resume_parser, versions
+from ..services.ai_structure import structure_with_ai
+from ..services.llm import LLMError, llm_for_user
 
 router = APIRouter(prefix="/api", tags=["resumes"])
 
@@ -60,6 +62,12 @@ async def upload_resume(file: UploadFile = File(...), label: str = "", user: Use
         text = resume_parser.extract_text(ftype, data)
         r.extracted_text, r.structured_profile = text, resume_parser.parse_structured(text)
         r.processing_status = "parsed"
+        client = llm_for_user(db, user.id)           # AI opt-in: rescue CVs whose layout the rules could not read
+        if client is not None and not r.structured_profile.get("experience"):
+            try:
+                r.structured_profile, _ = structure_with_ai(client, text)
+            except LLMError:
+                pass
     except resume_parser.ResumeError as e:
         r.processing_status, r.processing_error = "failed", e.message
     db.add(r)
@@ -102,13 +110,24 @@ def patch_resume(rid: int, body: ResumePatch, user: User = Depends(current_user)
 
 
 @router.post("/resumes/{rid}/reparse")
-def reparse_resume(rid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def reparse_resume(rid: int, ai: bool = False, user: User = Depends(current_user), db: Session = Depends(get_db)):
     """Re-run the structuring step on the stored text (e.g. after parser improvements). Replaces manual corrections."""
     r = owned_resume(db, user, rid)
     if not r.extracted_text:
         raise HTTPException(422, "This resume has no extracted text")
-    r.structured_profile = resume_parser.parse_structured(r.extracted_text)
-    audit(db, user.id, "resume_reparsed", "resume", r.id)
+    if ai:
+        client = llm_for_user(db, user.id)
+        if client is None:
+            raise HTTPException(422, "AI features are off. Enable them in Automation Settings (needs a configured AI provider).")
+        try:
+            r.structured_profile, report = structure_with_ai(client, r.extracted_text)
+        except LLMError as e:
+            raise HTTPException(502, f"AI could not read this CV: {e}")
+        r.insights = None
+    else:
+        r.structured_profile = resume_parser.parse_structured(r.extracted_text)
+        r.insights = None
+    audit(db, user.id, "resume_reparsed", "resume", r.id, ai=ai)
     db.commit()
     return _summary(r, True)
 

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { api, fmtDate, openSigned, useApi } from "@/lib/api";
+import CareerSnapshot from "@/components/CareerSnapshot";
 import ListInput from "@/components/ListInput";
 import { Button, Card, Chip, Empty, ErrorBox, Field, Input, Loading, Notice, PageHeader, Table, Td, Textarea, Th, useToast } from "@/components/ui";
 
@@ -62,10 +63,12 @@ export default function Resumes() {
   const cur = list?.find((r) => r.id === sel) || list?.[0];
   const { data: detail, reload: reloadDetail } = useApi<any>(cur ? `/api/resumes/${cur.id}` : null);
   const { data: versions } = useApi<any[]>(cur ? `/api/resumes/${cur.id}/versions` : null);
-  const [tab, setTab] = useState<"profile" | "text" | "versions">("profile");
+  const { data: autoSettings } = useApi<any>("/api/automation-settings");
+  const insightsAi = !!autoSettings?.ai_enabled;
+  const [tab, setTab] = useState<"snapshot" | "profile" | "text" | "versions">("snapshot");
 
   async function upload(f: File) {
-    setUploading(true); setUpErr(null);
+    setUploading(true); setUpErr(null); setTab("snapshot");
     const fd = new FormData(); fd.append("file", f);
     try { const r = await api("/api/resumes", { form: fd }); setSel(r.id); toast("Resume uploaded and parsed"); await reload(); }
     catch (e: any) { setUpErr(e.message); await reload(); } finally { setUploading(false); if (file.current) file.current.value = ""; }
@@ -91,11 +94,13 @@ export default function Resumes() {
               <Card title={cur.label || cur.filename} actions={<>
                 <Button variant="secondary" onClick={() => openSigned(`/api/resumes/${cur.id}/download-link`)}>Download original</Button>
                 <Button variant="secondary" title="Rebuild the extracted profile from the stored text with the latest parser" onClick={async () => { if (!confirm("Re-parse this resume? This replaces any corrections you made to the extracted profile.")) return; try { await api(`/api/resumes/${cur.id}/reparse`, { method: "POST" }); toast("Re-parsed. Review the extracted profile."); reload(); reloadDetail(); } catch (e: any) { toast(e.message, "err"); } }}>Re-parse</Button>
+                {insightsAi && <Button variant="secondary" title="Let AI read the CV layout (your name, email, phone and links are not sent)" onClick={async () => { if (!confirm("Re-read this CV with AI? This replaces any corrections you made to the extracted profile.")) return; try { await api(`/api/resumes/${cur.id}/reparse?ai=true`, { method: "POST" }); toast("Re-read with AI. Review the snapshot."); reload(); reloadDetail(); } catch (e: any) { toast(e.message, "err"); } }}>Re-parse with AI</Button>}
                 {!cur.is_primary && <Button variant="secondary" onClick={async () => { await api(`/api/resumes/${cur.id}`, { method: "PATCH", body: { is_primary: true } }); reload(); }}>Make primary</Button>}
                 <Button variant="danger" onClick={async () => { if (!confirm("Delete this resume and its generated versions?")) return; try { await api(`/api/resumes/${cur.id}`, { method: "DELETE" }); setSel(null); reload(); } catch (e: any) { toast(e.message, "err"); } }}>Delete</Button></>}>
                 <div className="mb-4 flex gap-2 border-b border-slate-200 text-sm">
-                  {(["profile", "text", "versions"] as const).map((t) => <button key={t} onClick={() => setTab(t)} className={`-mb-px border-b-2 px-3 py-2 ${tab === t ? "border-brand-600 font-medium text-brand-700" : "border-transparent text-slate-500"}`}>{{ profile: "Extracted profile", text: "Extracted text", versions: `Generated versions (${versions?.length ?? 0})` }[t]}</button>)}
+                  {(["snapshot", "profile", "text", "versions"] as const).map((t) => <button key={t} onClick={() => setTab(t)} className={`-mb-px border-b-2 px-3 py-2 ${tab === t ? "border-brand-600 font-medium text-brand-700" : "border-transparent text-slate-500"}`}>{{ snapshot: "Career snapshot", profile: "Extracted profile", text: "Extracted text", versions: `Generated versions (${versions?.length ?? 0})` }[t]}</button>)}
                 </div>
+                {tab === "snapshot" && (detail.structured_profile ? <CareerSnapshot key={cur.id + ":" + (detail.structured_profile?.parsed_by || "")} resumeId={cur.id} /> : <p className="text-sm text-red-700">{detail.processing_error}</p>)}
                 {tab === "profile" && (detail.structured_profile ? <Editor resume={detail} onSaved={reloadDetail} /> : <p className="text-sm text-red-700">{detail.processing_error}</p>)}
                 {tab === "text" && <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-xs">{detail.extracted_text}</pre>}
                 {tab === "versions" && (!versions?.length ? <p className="text-sm text-slate-500">No tailored versions yet. They are created per job from the job page.</p> : (

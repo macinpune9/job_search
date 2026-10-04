@@ -13,7 +13,7 @@ const blank = () => ({
   profile_name: "My search", keywords: [] as any[], match_mode: "weighted", exclusions: {} as any, employment_types: [] as string[],
   role_preferences: {} as any, salary_preferences: { currency: "CHF", period: "year", basis: "gross" } as any, location_preferences: {} as any,
   remote_preferences: [] as string[], other_filters: {} as any, sources: [] as any[], resume_id: null as number | null,
-  date_lookback_days: 30, unknown_date_policy: "include", min_match_score: 40, overlap_hours: 48, active: true,
+  date_lookback_days: 30, unknown_date_policy: "include", min_match_score: 40, strictness: "flexible", overlap_hours: 48, active: true,
 });
 
 export default function Preferences() {
@@ -109,7 +109,10 @@ export default function Preferences() {
             <div className="grid grid-cols-2 gap-3">
               <Field label="First search looks back (days)" hint="Jobs posted within this window. Default 30."><Input type="number" min={1} max={365} value={f.date_lookback_days} onChange={(e) => set("date_lookback_days", +e.target.value)} /></Field>
               <Field label="If posted date is unknown" hint="Modified dates are never treated as posted dates."><Select value={f.unknown_date_policy} onChange={(e) => set("unknown_date_policy", e.target.value)}><option value="include">Include (flagged)</option><option value="exclude">Exclude</option></Select></Field>
-              <Field label="Minimum match score"><Input type="number" min={0} max={100} value={f.min_match_score} onChange={(e) => set("min_match_score", +e.target.value)} /></Field>
+              <Field label="Matching style" hint="Flexible (recommended): work mode, employment type and location only lower a job's score. Strict: a job that misses any of them is hidden.">
+                <Select value={f.strictness || "flexible"} onChange={(e) => set("strictness", e.target.value)}><option value="flexible">Flexible: show partial matches</option><option value="strict">Strict: all preferences must match</option></Select></Field>
+              <Field label={`Show jobs matching at least ${Math.round(f.min_match_score)}% of my criteria`} hint="40–50% is a good starting point; raise it if you see too many.">
+                <input type="range" min={20} max={90} step={5} value={f.min_match_score} onChange={(e) => set("min_match_score", +e.target.value)} className="w-full accent-brand-600" aria-label="Minimum match percentage" /></Field>
               <label className="flex items-end gap-2 pb-2 text-sm"><input type="checkbox" checked={f.active} onChange={(e) => set("active", e.target.checked)} /> Active (included in scheduled runs)</label>
             </div>
           </div>
@@ -126,7 +129,7 @@ export default function Preferences() {
             </div>
           </div>
         </Card>
-        <Card title="Keywords" className="xl:col-span-2" actions={<><Button variant="secondary" onClick={suggest}>Suggest from my resume</Button><Button variant="secondary" busy={busy === "ai"} onClick={suggestAi} title="Requires AI to be enabled in Automation Settings">Suggest with AI</Button><Select aria-label="Match mode" value={f.match_mode} onChange={(e) => set("match_mode", e.target.value)} className="w-auto"><option value="weighted">Weighted</option><option value="or">Any keyword (OR)</option><option value="and">All keywords (AND)</option></Select></>}>
+        <Card title="Keywords" className="xl:col-span-2" actions={<><Button variant="secondary" onClick={suggest} title="A short, ranked list from your CV (not every word)">Suggest from my CV</Button><Button variant="secondary" busy={busy === "ai"} onClick={suggestAi} title="Requires AI to be enabled in Automation Settings">Suggest with AI</Button><Select aria-label="Match mode" value={f.match_mode} onChange={(e) => set("match_mode", e.target.value)} className="w-auto"><option value="weighted">Weighted</option><option value="or">Any keyword (OR)</option><option value="and">All keywords (AND)</option></Select></>}>
           <div className="space-y-3">
             {f.keywords.filter((k: any) => k.required).length > 5 && (
               <Notice tone="warn">
